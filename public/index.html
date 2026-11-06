@@ -13,14 +13,22 @@ h1{margin:8px 0 4px;font-size:28px}
 h1 span{color:var(--green)}
 .sub{color:var(--muted);margin:0 0 20px}
 .card{background:var(--panel);border-radius:12px;padding:16px;margin-bottom:14px}
-input[type=text]{width:100%;padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:16px}
+input[type=text],input[type=password]{width:100%;padding:12px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:16px;margin-top:8px}
+input:disabled{opacity:.7}
 button{cursor:pointer;border:0;border-radius:10px;font-size:18px;font-weight:700;padding:14px;width:100%;background:var(--green);color:#fff;margin-top:10px}
 button.sec{background:var(--panel2);color:var(--text)}
+button.small{font-size:14px;padding:10px}
 button:active{transform:scale(.98)}
 .stats{display:flex;gap:10px;margin-top:12px}
 .stat{flex:1;background:var(--panel2);border-radius:8px;padding:10px;text-align:center}
 .stat b{display:block;font-size:22px}
 .stat small{color:var(--muted)}
+.seg{display:flex;gap:6px;margin-top:10px}
+.seg button{margin:0;font-size:15px;padding:10px 4px;background:var(--panel2);color:var(--muted)}
+.seg button.on{background:var(--green);color:#fff}
+.who{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.who button{width:auto;margin:0;padding:8px 14px;font-size:14px}
+.err{color:var(--red);min-height:20px;margin-top:8px;font-size:14px}
 table{width:100%;border-collapse:collapse}
 td,th{padding:6px 4px;text-align:left;font-size:15px}
 th{color:var(--muted);font-weight:500}
@@ -29,6 +37,8 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
 .center{text-align:center}
 .pulse{animation:pulse 1.2s infinite}
 @keyframes pulse{50%{opacity:.4}}
+#gbtn{display:flex;justify-content:center;margin-top:12px}
+#banner{position:fixed;top:0;left:0;right:0;background:var(--red);color:#fff;text-align:center;padding:8px;font-weight:700;z-index:20}
 
 /* gra */
 .bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;gap:10px}
@@ -39,6 +49,7 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
 .prog div{height:100%;width:0;background:var(--green);transition:width .3s}
 .prog.opp div{background:var(--red)}
 #timer{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;min-width:90px;text-align:center}
+#oppnote{color:#f0b429;font-size:13px;min-height:18px;margin-bottom:4px}
 #board{display:grid;grid-template-columns:repeat(9,1fr);border:3px solid #d8d5d0;border-radius:6px;overflow:hidden;background:#d8d5d0;aspect-ratio:1/1;user-select:none;position:relative}
 .c{display:flex;align-items:center;justify-content:center;background:#f3f1ee;color:#1d4ed8;font-size:clamp(18px,6vw,30px);font-weight:600;border:.5px solid #b9b6b1;cursor:pointer}
 .c.g{color:#111;font-weight:800}
@@ -55,18 +66,44 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
 #pad button.done{opacity:.25}
 #lock{height:22px;color:var(--red);font-weight:700;text-align:center;margin-top:8px}
 .big{font-size:44px;font-weight:900;margin:6px 0}
-.win{color:var(--green)}.lose{color:var(--red)}
+.win{color:var(--green)}.lose{color:var(--red)}.neutral{color:var(--muted)}
 </style>
 </head>
 <body>
+<div id="banner" class="hidden"></div>
 <div id="app">
 
   <!-- MENU -->
   <div id="menu">
     <h1>Sudoku <span>Duel</span></h1>
     <p class="sub">Ten sam sudoku, dwóch graczy. Kto pierwszy rozwiąże – wygrywa. <span id="online"></span></p>
+
     <div class="card">
+      <div class="who">
+        <div id="whoText" style="color:var(--muted);font-size:14px"></div>
+        <button class="sec" id="accBtn"></button>
+      </div>
       <input type="text" id="name" maxlength="16" placeholder="Twój nick">
+    </div>
+
+    <!-- logowanie / rejestracja -->
+    <div class="card hidden" id="auth">
+      <div class="seg">
+        <button id="tabLogin" class="on">Logowanie</button>
+        <button id="tabReg">Nowe konto</button>
+      </div>
+      <input type="text" id="aName" maxlength="16" placeholder="Nick" autocomplete="username">
+      <input type="password" id="aPass" maxlength="100" placeholder="Hasło (min. 6 znaków)" autocomplete="current-password">
+      <div id="ts" style="margin-top:10px"></div>
+      <div class="err" id="aErr"></div>
+      <button id="aGo">Zaloguj</button>
+      <div id="gbtn"></div>
+      <p class="sub" id="regNote" style="font-size:13px;margin:12px 0 0">Zakładając konto zachowujesz obecny ranking.</p>
+    </div>
+
+    <div class="card">
+      <b>Poziom trudności</b>
+      <div class="seg" id="diffSeg"></div>
       <div class="stats">
         <div class="stat"><b id="elo">1000</b><small>Ranking</small></div>
         <div class="stat"><b id="wins">0</b><small>Wygrane</small></div>
@@ -75,18 +112,18 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
       <button id="play">⚔ Szukaj przeciwnika</button>
     </div>
     <div class="card">
-      <b>🏆 Ranking TOP 20</b>
+      <b>🏆 Ranking TOP 20 <span id="lbDiff" style="color:var(--muted);font-weight:400"></span></b>
       <table id="lb"><tr><td class="sub">Ładowanie…</td></tr></table>
     </div>
     <div class="card" style="color:var(--muted);font-size:14px">
-      Zasady: wpisujesz cyfry z klawiatury lub z paska pod planszą. Błędna cyfra = blokada na 2 sekundy. Pasek pokazuje postęp przeciwnika.
+      Zasady: wpisujesz cyfry z klawiatury lub z paska pod planszą. Błędna cyfra = blokada na 4 sekundy. Pasek pokazuje postęp przeciwnika. Odświeżenie strony w trakcie meczu nie kończy gry – masz 30 sekund na powrót.
     </div>
   </div>
 
   <!-- SZUKANIE -->
   <div id="searching" class="hidden center">
     <h1 class="pulse" style="margin-top:80px">Szukam przeciwnika…</h1>
-    <p class="sub">Dobieramy graczy o podobnym rankingu</p>
+    <p class="sub" id="searchSub">Dobieramy graczy o podobnym rankingu</p>
     <button class="sec" id="cancel">Anuluj</button>
   </div>
 
@@ -96,13 +133,14 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
       <div class="pl"><div class="n" id="oppName"></div><div class="e" id="oppElo"></div><div class="prog opp"><div id="oppBar"></div></div></div>
       <div id="timer">0:00</div>
     </div>
+    <div id="oppnote"></div>
     <div id="board"><div id="overlay" class="hidden"></div></div>
     <div id="lock"></div>
     <div id="pad"></div>
     <div class="bar" style="margin-top:12px">
       <div class="pl"><div class="n">Ty</div><div class="prog"><div id="meBar"></div></div></div>
     </div>
-    <button class="sec" id="resign" style="font-size:14px;padding:10px">Poddaj się</button>
+    <button class="sec small" id="resign">Poddaj się</button>
   </div>
 
   <!-- WYNIK -->
@@ -119,59 +157,152 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
 const $ = id => document.getElementById(id);
 const screens = ['menu','searching','game','result'];
 function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); }
-
-let ws, me = null, G = null, sel = -1, lockUntil = 0, timerInt = null, reconnectT = null;
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 const store = {
   get(k){ try { return localStorage.getItem(k); } catch { return null; } },
-  set(k,v){ try { localStorage.setItem(k,v); } catch {} }
+  set(k,v){ try { localStorage.setItem(k,v); } catch {} },
+  del(k){ try { localStorage.removeItem(k); } catch {} }
 };
-$('name').value = store.get('name') || '';
 
+let ws, me = null, cfg = {}, G = null, sel = -1, lockUntil = 0, timerInt = null, reconnectT = null;
+let curDiff = store.get('diff') || 'medium';
+let replaced = false, authMode = 'login', captcha = '', tsId = null, googleReady = false;
+const DIFF_LABEL = { easy: 'Łatwy', medium: 'Średni', hard: 'Trudny' };
+if (!DIFF_LABEL[curDiff]) curDiff = 'medium';
+
+// ---------- połączenie ----------
 function connect(){
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
-  ws.onopen = () => hello();
+  ws.onopen = () => { banner(''); ws.send(JSON.stringify({ type:'hello', token: store.get('token'), name: $('name').value })); };
   ws.onmessage = e => onMsg(JSON.parse(e.data));
-  ws.onclose = () => { clearTimeout(reconnectT); reconnectT = setTimeout(connect, 1500); };
-}
-function hello(){
-  ws.send(JSON.stringify({ type:'hello', token: store.get('token'), name: $('name').value }));
+  ws.onclose = e => {
+    if (replaced) return;
+    if (G) banner('Utracono połączenie – łączę ponownie…');
+    clearTimeout(reconnectT); reconnectT = setTimeout(connect, 1500);
+  };
 }
 function tx(o){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
+function banner(t){ $('banner').textContent = t; $('banner').classList.toggle('hidden', !t); }
 
 function onMsg(m){
   if (m.type === 'hello'){
-    me = m; store.set('token', m.token); store.set('name', m.name);
-    $('name').value = m.name; updateStats(); loadLb();
+    store.set('token', m.token); me = m.user; renderMe(); loadLb();
   }
+  else if (m.type === 'me'){ me = m.user; renderMe(); }
   else if (m.type === 'online') $('online').textContent = '🟢 online: ' + m.n;
-  else if (m.type === 'queued') show('searching');
+  else if (m.type === 'queued'){ $('searchSub').textContent = 'Poziom: ' + DIFF_LABEL[m.diff] + ' · dobieramy graczy o podobnym rankingu'; show('searching'); }
   else if (m.type === 'idle') show('menu');
   else if (m.type === 'match') startMatch(m);
   else if (m.type === 'ok'){
-    G.cur[m.r*9+m.c] = m.v; $('meBar').style.width = (m.filled / G.empties * 100) + '%';
-    render();
+    G.cur[m.r*9+m.c] = m.v; $('meBar').style.width = (m.filled / G.empties * 100) + '%'; render();
   }
   else if (m.type === 'wrong'){
     lockUntil = Date.now() + m.lockMs;
     const el = G.cells[m.r*9+m.c]; el.classList.add('bad'); setTimeout(() => el.classList.remove('bad'), 400);
   }
   else if (m.type === 'opp') $('oppBar').style.width = (m.filled / G.empties * 100) + '%';
+  else if (m.type === 'oppstatus') oppStatus(m);
   else if (m.type === 'result') endMatch(m);
+  else if (m.type === 'replaced'){
+    replaced = true; banner('Gra jest otwarta w innej karcie. Odśwież stronę, aby wrócić tutaj.');
+  }
 }
 
-function updateStats(){
-  $('elo').textContent = me.elo; $('wins').textContent = me.wins; $('losses').textContent = me.losses;
+let oppT = null;
+function oppStatus(m){
+  clearInterval(oppT);
+  if (m.online){ $('oppnote').textContent = ''; return; }
+  const end = Date.now() + m.graceMs;
+  const upd = () => { $('oppnote').textContent = '⚠ Przeciwnik się rozłączył – czekamy ' + Math.max(0, Math.ceil((end - Date.now())/1000)) + ' s'; };
+  upd(); oppT = setInterval(upd, 500);
+}
+
+// ---------- menu / konto ----------
+function renderMe(){
+  if (!me) return;
+  const guest = me.guest;
+  $('name').value = me.name; $('name').disabled = !guest;
+  $('whoText').textContent = guest ? 'Grasz jako gość – ranking jest przypisany do tej przeglądarki.' : 'Zalogowany jako ' + me.name + (me.google ? ' (Google)' : '');
+  $('accBtn').textContent = guest ? 'Zaloguj / Załóż konto' : 'Wyloguj';
+  if (!guest) $('auth').classList.add('hidden');
+  renderStats();
+}
+function renderStats(){
+  $('diffSeg').innerHTML = '';
+  for (const d of Object.keys(DIFF_LABEL)){
+    const b = document.createElement('button'); b.textContent = DIFF_LABEL[d]; b.className = d === curDiff ? 'on' : '';
+    b.onclick = () => { curDiff = d; store.set('diff', d); renderStats(); loadLb(); };
+    $('diffSeg').appendChild(b);
+  }
+  const s = me ? me.stats[curDiff] : { elo: 1000, wins: 0, losses: 0 };
+  $('elo').textContent = s.elo; $('wins').textContent = s.wins; $('losses').textContent = s.losses;
+  $('lbDiff').textContent = '· ' + DIFF_LABEL[curDiff];
 }
 async function loadLb(){
   try {
-    const d = await (await fetch('/api/leaderboard')).json();
+    const d = await (await fetch('/api/leaderboard?diff=' + curDiff)).json();
     $('lb').innerHTML = d.length
       ? '<tr><th>#</th><th>Gracz</th><th>Elo</th><th>W/L</th></tr>' + d.map((u,i) =>
           `<tr><td>${i+1}</td><td>${esc(u.name)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
-      : '<tr><td class="sub">Nikt jeszcze nie zagrał. Bądź pierwszy!</td></tr>';
+      : '<tr><td class="sub">Nikt jeszcze nie zagrał na tym poziomie. Bądź pierwszy!</td></tr>';
   } catch {}
 }
-function esc(s){ return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+$('name').onchange = () => { if (me && me.guest) tx({ type:'name', name: $('name').value }); };
+
+$('accBtn').onclick = async () => {
+  if (me && !me.guest){
+    try { await fetch('/api/logout', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: store.get('token') }) }); } catch {}
+    store.del('token'); ws.close(); return;
+  }
+  $('auth').classList.toggle('hidden'); if (!$('auth').classList.contains('hidden')) initAuth();
+};
+
+function setAuthMode(mode){
+  authMode = mode;
+  $('tabLogin').classList.toggle('on', mode === 'login'); $('tabReg').classList.toggle('on', mode === 'reg');
+  $('aGo').textContent = mode === 'login' ? 'Zaloguj' : 'Załóż konto';
+  $('regNote').classList.toggle('hidden', mode !== 'reg');
+  $('aPass').autocomplete = mode === 'login' ? 'current-password' : 'new-password';
+  $('ts').classList.toggle('hidden', mode !== 'reg');
+  $('aErr').textContent = '';
+  if (mode === 'reg') renderTurnstile();
+}
+$('tabLogin').onclick = () => setAuthMode('login');
+$('tabReg').onclick = () => setAuthMode('reg');
+
+function renderTurnstile(){
+  if (!cfg.turnstileSiteKey || !window.turnstile) return;
+  if (tsId !== null){ window.turnstile.reset(tsId); captcha = ''; return; }
+  tsId = window.turnstile.render('#ts', { sitekey: cfg.turnstileSiteKey, theme: 'dark', callback: t => { captcha = t; }, 'expired-callback': () => { captcha = ''; } });
+}
+
+async function authCall(url, body){
+  $('aErr').textContent = '';
+  try {
+    const r = await fetch(url, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(Object.assign({ token: store.get('token') }, body)) });
+    const d = await r.json();
+    if (!r.ok){ $('aErr').textContent = d.error || 'Błąd.'; if (authMode === 'reg') renderTurnstile(); return; }
+    store.set('token', d.token); $('aPass').value = ''; ws.close();   // połączy się ponownie już jako konto
+  } catch { $('aErr').textContent = 'Brak połączenia z serwerem.'; }
+}
+$('aGo').onclick = () => {
+  const name = $('aName').value.trim(), password = $('aPass').value;
+  if (!name || !password){ $('aErr').textContent = 'Wpisz nick i hasło.'; return; }
+  if (authMode === 'login') authCall('/api/login', { name, password });
+  else authCall('/api/register', { name, password, captcha });
+};
+$('aPass').onkeydown = e => { if (e.key === 'Enter') $('aGo').click(); };
+
+function initAuth(){
+  setAuthMode(authMode);
+  if (cfg.googleClientId && googleReady && !$('gbtn').dataset.done){
+    window.google.accounts.id.initialize({ client_id: cfg.googleClientId, callback: r => authCall('/api/google', { credential: r.credential }) });
+    window.google.accounts.id.renderButton($('gbtn'), { theme: 'filled_black', size: 'large', text: 'continue_with', width: 280 });
+    $('gbtn').dataset.done = '1';
+  }
+}
+function loadScript(src, onload){ const s = document.createElement('script'); s.src = src; s.async = true; s.onload = onload; document.head.appendChild(s); }
 
 // ---------- plansza ----------
 const board = $('board');
@@ -188,24 +319,28 @@ for (let v = 1; v <= 9; v++){
 }
 
 function startMatch(m){
-  G = { puzzle: m.puzzle, cur: m.puzzle.slice(), empties: m.empties, cells };
-  sel = -1; lockUntil = 0;
-  $('oppName').textContent = m.opp.name; $('oppElo').textContent = 'Elo ' + m.opp.elo;
-  $('oppBar').style.width = '0'; $('meBar').style.width = '0';
+  G = { puzzle: m.puzzle, cur: m.cur.slice(), empties: m.empties, cells, diff: m.diff };
+  sel = -1; lockUntil = Date.now() + (m.lockMs || 0);
+  $('oppName').textContent = m.opp.name; $('oppElo').textContent = DIFF_LABEL[m.diff] + ' · Elo ' + m.opp.elo;
+  $('oppBar').style.width = (m.oppFilled / m.empties * 100) + '%';
+  $('meBar').style.width = (m.filled / m.empties * 100) + '%';
+  $('oppnote').textContent = ''; clearInterval(oppT);
+  if (m.oppOnline === false) oppStatus({ online: false, graceMs: 30000 });
   $('timer').textContent = '0:00'; $('lock').textContent = '';
-  render(); show('game');
-  const startAt = performance.now() + m.startIn;
-  const ov = $('overlay'); ov.classList.remove('hidden');
+  banner(''); render(); show('game');
+  const t0 = performance.now() - m.elapsed;         // moment startu meczu (elapsed < 0 = trwa odliczanie)
+  const ov = $('overlay');
   clearInterval(timerInt);
-  timerInt = setInterval(() => {
-    const left = startAt - performance.now();
-    if (left > 0){ ov.textContent = Math.ceil(left / 1000); $('timer').textContent = '0:00'; return; }
+  const tick = () => {
+    const el = performance.now() - t0;
+    if (el < 0){ ov.classList.remove('hidden'); ov.textContent = Math.ceil(-el / 1000); $('timer').textContent = '0:00'; return; }
     ov.classList.add('hidden');
-    const s = Math.floor(-left / 1000);
+    const s = Math.floor(el / 1000);
     $('timer').textContent = Math.floor(s/60) + ':' + String(s%60).padStart(2,'0');
     const rem = lockUntil - Date.now();
     $('lock').textContent = rem > 0 ? '⛔ Blokada: ' + Math.ceil(rem/1000) + 's' : '';
-  }, 100);
+  };
+  tick(); timerInt = setInterval(tick, 100);
 }
 
 function render(){
@@ -213,15 +348,15 @@ function render(){
   const sv = sel >= 0 ? G.cur[sel] : 0;
   const counts = Array(10).fill(0);
   for (let i = 0; i < 81; i++){
-    const el = cells[i], v = G.cur[i];
+    const el = cells[i], v = G.cur[i], r = (i/9)|0, c = i%9;
     el.textContent = v || '';
     if (v) counts[v]++;
     let cls = 'c';
-    if (i % 9 === 2 || i % 9 === 5) cls += ' br';
-    if (((i / 9) | 0) === 2 || ((i / 9) | 0) === 5) cls += ' bb';
+    if (c === 2 || c === 5) cls += ' br';
+    if (r === 2 || r === 5) cls += ' bb';
     if (G.puzzle[i]) cls += ' g';
     if (sel >= 0){
-      const r = (i/9)|0, c = i%9, sr = (sel/9)|0, sc = sel%9;
+      const sr = (sel/9)|0, sc = sel%9;
       if (i === sel) cls += ' s';
       else if (sv && v === sv) cls += ' same';
       else if (r === sr || c === sc || ((r/3|0) === (sr/3|0) && (c/3|0) === (sc/3|0))) cls += ' r';
@@ -253,27 +388,45 @@ document.addEventListener('keydown', e => {
 
 function fmt(ms){ const s = Math.floor(ms/1000); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
 function endMatch(m){
-  clearInterval(timerInt); G = null;
-  me.elo = m.elo; if (m.won) me.wins++; else me.losses++; updateStats();
-  $('resTitle').textContent = m.won ? 'Wygrana! 🏆' : 'Przegrana';
-  $('resTitle').className = 'big ' + (m.won ? 'win' : 'lose');
-  const why = { solved: m.won ? 'Rozwiązałeś pierwszy' : 'Przeciwnik rozwiązał pierwszy', resign: m.won ? 'Przeciwnik się poddał' : 'Poddałeś się', disconnect: 'Przeciwnik się rozłączył' };
-  $('resSub').textContent = (m.reason === 'disconnect' && !m.won ? 'Rozłączono' : why[m.reason]) + ' · czas ' + fmt(m.ms);
-  $('resElo').textContent = m.elo;
+  clearInterval(timerInt); clearInterval(oppT); G = null; banner('');
+  me = m.user; curDiff = m.diff; renderStats();
+  const why = {
+    solved: m.won ? 'Rozwiązałeś pierwszy' : 'Przeciwnik rozwiązał pierwszy',
+    resign: m.won ? 'Przeciwnik się poddał' : 'Poddałeś się',
+    disconnect: m.won ? 'Przeciwnik się rozłączył' : 'Rozłączono na zbyt długo'
+  };
+  if (m.void){
+    $('resTitle').textContent = 'Mecz unieważniony'; $('resTitle').className = 'big neutral';
+    $('resSub').textContent = 'Wynik w czasie niemożliwym dla człowieka. Ranking bez zmian.';
+  } else {
+    $('resTitle').textContent = m.won ? 'Wygrana! 🏆' : 'Przegrana';
+    $('resTitle').className = 'big ' + (m.won ? 'win' : 'lose');
+    $('resSub').textContent = why[m.reason] + ' · czas ' + fmt(m.ms);
+  }
+  $('resElo').textContent = me.stats[m.diff].elo;
   $('resDelta').textContent = (m.delta >= 0 ? '+' : '') + m.delta + ' Elo';
-  $('resDelta').className = m.delta >= 0 ? 'win' : 'lose';
+  $('resDelta').className = m.delta > 0 ? 'win' : m.delta < 0 ? 'lose' : 'neutral';
   show('result');
 }
 
-$('play').onclick = () => {
-  if (!$('name').value.trim()) { $('name').focus(); return; }
-  hello(); tx({ type:'queue' });
-};
+function play(){
+  if (me && me.guest && !$('name').value.trim()){ $('name').focus(); return; }
+  if (me && me.guest) tx({ type:'name', name: $('name').value });
+  tx({ type:'queue', diff: curDiff });
+}
+$('play').onclick = play;
+$('again').onclick = play;
 $('cancel').onclick = () => tx({ type:'cancel' });
 $('resign').onclick = () => { if (confirm('Na pewno się poddać?')) tx({ type:'resign' }); };
-$('again').onclick = () => { tx({ type:'queue' }); };
 $('toMenu').onclick = () => { show('menu'); loadLb(); };
 
+// ---------- start ----------
+renderStats();
+fetch('/api/config').then(r => r.json()).then(c => {
+  cfg = c;
+  if (c.googleClientId) loadScript('https://accounts.google.com/gsi/client', () => { googleReady = true; });
+  if (c.turnstileSiteKey) loadScript('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', () => {});
+}).catch(() => {});
 connect();
 </script>
 </body>
