@@ -9,7 +9,7 @@ const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(process.env.DATA_DIR || __dirname, 'data.json');
 const REMOVE_CELLS = 50;        // ile pól usuwamy (50 = ok. 31 podpowiedzi, średni poziom)
 const COUNTDOWN_MS = 3000;
-const WRONG_LOCK_MS = 5000;     // kara za błędną cyfrę
+const WRONG_LOCK_MS = 2000;     // kara za błędną cyfrę
 const K = 32;                   // współczynnik Elo
 
 // ---------- "baza danych" w pliku JSON ----------
