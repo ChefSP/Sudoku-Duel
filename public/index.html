@@ -46,9 +46,8 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
 .c.s{background:#bcd4f5}
 .c.same{background:#a6c4f0}
 .c.bad{background:#f7a8a4;animation:shake .3s}
-.c:nth-child(3n){border-right:2px solid #333}
-.c:nth-child(9n){border-right:.5px solid #b9b6b1}
-.c:nth-child(n+19):nth-child(-n+27),.c:nth-child(n+46):nth-child(-n+54){border-bottom:2px solid #333}
+.c.br{border-right:2px solid #333}
+.c.bb{border-bottom:2px solid #333}
 @keyframes shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
 #overlay{position:absolute;inset:0;background:rgba(22,21,18,.88);display:flex;align-items:center;justify-content:center;font-size:90px;font-weight:900;color:#fff;z-index:5}
 #pad{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-top:12px}
@@ -80,7 +79,7 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
       <table id="lb"><tr><td class="sub">Ładowanie…</td></tr></table>
     </div>
     <div class="card" style="color:var(--muted);font-size:14px">
-      Zasady: wpisujesz cyfry z klawiatury lub z paska pod planszą. Błędna cyfra = blokada na 5 sekund. Pasek pokazuje postęp przeciwnika.
+      Zasady: wpisujesz cyfry z klawiatury lub z paska pod planszą. Błędna cyfra = blokada na 2 sekundy. Pasek pokazuje postęp przeciwnika.
     </div>
   </div>
 
@@ -218,6 +217,8 @@ function render(){
     el.textContent = v || '';
     if (v) counts[v]++;
     let cls = 'c';
+    if (i % 9 === 2 || i % 9 === 5) cls += ' br';
+    if (((i / 9) | 0) === 2 || ((i / 9) | 0) === 5) cls += ' bb';
     if (G.puzzle[i]) cls += ' g';
     if (sel >= 0){
       const r = (i/9)|0, c = i%9, sr = (sel/9)|0, sc = sel%9;
