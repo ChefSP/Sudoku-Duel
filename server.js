@@ -293,7 +293,9 @@ function pub(u) {
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '8kb' }));
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, 'public'), {
+  setHeaders: (res, f) => { if (f.endsWith('sw.js') || f.endsWith('.webmanifest')) res.setHeader('Cache-Control', 'no-cache'); }   // service worker i manifest zawsze świeże
+}));
 app.use('/api', (req, res, next) => {              // zablokowany adres IP nie korzysta z API (poza panelem admina)
   if (!req.path.startsWith('/admin') && ipBanned(ipOf(req))) return res.status(403).json({ error: 'Ten adres IP został zablokowany.' });
   next();
@@ -482,6 +484,7 @@ wss.on('connection', (ws, req) => {
     }
     else if (m.type === 'cancel') { leaveAll(p); sendP(p, { type: 'idle' }); }
     else if (m.type === 'report') handleReport(p, m);
+    else if (m.type === 'emote') handleEmote(p, m);
     else if (m.type === 'leave') leaveAll(p);                       // wyjście z ekranu wyniku
     else if (m.type === 'move' && p.game) handleMove(p, m);
     else if (m.type === 'resign' && p.game) endGame(p.game, 1 - p.idx, 'resign');
@@ -615,8 +618,12 @@ function startGame(p0, p1, diff, opts = {}) {
     filled: [0, 0], lockedUntil: [0, 0], lastMove: [0, 0],
     startAt: Date.now() + COUNTDOWN_MS, over: false
   };
-  [p0, p1].forEach((p, i) => { p.game = game; p.idx = i; });
+  [p0, p1].forEach((p, i) => { p.game = game; p.idx = i; p.emoteCount = 0; });
   [p0, p1].forEach((p, i) => sendP(p, matchPayload(game, i)));
+}
+
+function oppMask(g, i) {                                 // które pola ma wypełnione gracz i (bez cyfr, bez podpowiedzi)
+  return g.cur[i].map((v, k) => (v && !g.puzzle[k]) ? 1 : 0);
 }
 
 function matchPayload(g, i) {
@@ -625,7 +632,7 @@ function matchPayload(g, i) {
     type: 'match', diff: g.diff, ranked: g.ranked, friend: g.friend, blind: g.blind,
     puzzle: g.puzzle, cur: g.cur[i], empties: g.empties,
     elapsed: now - g.startAt,                          // ujemne = trwa odliczanie
-    filled: g.filled[i], oppFilled: g.filled[1 - i],
+    filled: g.filled[i], oppFilled: g.filled[1 - i], oppMask: oppMask(g, 1 - i),
     lockMs: Math.max(0, g.lockedUntil[i] - now),
     opp: { name: o.user.name, elo: g.ranked ? o.user.stats[g.diff].elo : null },
     oppOnline: !!o.ws
@@ -649,7 +656,7 @@ function handleMove(p, m) {
     g.filled[i] += (v ? 1 : 0) - (mine[idx] ? 1 : 0);
     mine[idx] = v;
     sendP(p, { type: 'ok', r, c, v, filled: g.filled[i] });
-    sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i] });
+    sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: v ? 1 : 0 });
     if (g.filled[i] >= g.empties) {
       if (mine.every((x, k) => x === g.solution[k])) endGame(g, i, 'solved');
       else sendP(p, { type: 'full' });               // pełna plansza, ale gdzieś jest błąd (bez wskazywania gdzie)
@@ -663,12 +670,30 @@ function handleMove(p, m) {
     mine[idx] = v;
     g.filled[i]++;
     sendP(p, { type: 'ok', r, c, v, filled: g.filled[i] });
-    sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i] });
+    sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: 1 });
     if (g.filled[i] >= g.empties) endGame(g, i, 'solved');
   } else {
     g.lockedUntil[i] = now + g.lockMs;
     sendP(p, { type: 'wrong', r, c, lockMs: g.lockMs });
   }
+}
+
+// ---------- emotki (gotowe wiadomości, bez wolnego tekstu) ----------
+const EMOTE_COUNT = 8, EMOTE_GAP_MS = 1500, EMOTE_MAX = 30;      // lista i treść emotek jest po stronie strony
+function handleEmote(p, m) {
+  const id = m.id;
+  if (!Number.isInteger(id) || id < 0 || id >= EMOTE_COUNT) return;
+  const now = Date.now();
+  if (now - (p.lastEmote || 0) < EMOTE_GAP_MS || (p.emoteCount || 0) >= EMOTE_MAX) return;
+  let o = null;
+  if (p.game && !p.game.over) o = p.game.players[1 - p.idx];
+  else if (p.last && Date.now() - p.last.at <= REMATCH_MS) {          // chwila po meczu ("GG")
+    o = players.get(p.last.oppId);
+    if (o && !(o.last && o.last.oppId === p.user.id)) o = null;
+  }
+  if (!o || !o.ws) return;
+  p.lastEmote = now; p.emoteCount = (p.emoteCount || 0) + 1;
+  sendP(o, { type: 'emote', id, from: p.user.name });
 }
 
 function deliver(p, msg) {

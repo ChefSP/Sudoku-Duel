@@ -10,6 +10,10 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 - **Solo**, **notatki w komórkach** (podwójne kliknięcie pustego pola, przycisk ✎ albo klawisz N), **rewanż** jednym kliknięciem, **pojedynek ze znajomym przez link** (bez rankingu).
 - **Statystyki** (średni i najlepszy czas, passa wygranych, skuteczność), **wykres Elo** i **historia meczów** (ostatnie 50): ekran "Moje statystyki" w menu po zalogowaniu.
 - **Zgłaszanie graczy** (🚩 w trakcie meczu i na ekranie wyniku), **panel admina z banami** (konto albo IP).
+- **Wygląd:** motyw aplikacji (auto / ciemny / jasny), 4 motywy planszy (papier, drewno, neon, ocean), podświetlenie ukończonego rzędu, kolumny lub bloku (poza Hardcore), wyraźne odliczanie z "START!", konfetti po wygranej, dźwięki (generowane w przeglądarce, z przyciskiem wyciszenia). Ustawienia pod ⚙ w menu, zapisują się w przeglądarce.
+- **Podgląd przeciwnika:** miniplansza w nagłówku meczu pokazuje, które pola rywal ma wypełnione (bez cyfr, także w Hardcore). Dotknięcie powiększa ją na środek ekranu. Można wyłączyć w ustawieniach.
+- **Emotki:** 8 gotowych (👍 🔥 🤔 😅 😎 👏 🤝 😱), przycisk 💬 w meczu i na ekranie wyniku ("GG"). Bez wolnego tekstu, limit 1 na 1,5 s i 30 na mecz. Rywala można wyciszyć w ustawieniach.
+- **Telefon / PWA:** układ dopasowany do małych ekranów i wcięć ekranu, aplikację można zainstalować (Android: przycisk w ustawieniach, iPhone: Udostępnij → Dodaj do ekranu początkowego). Bez internetu otwiera się zapisany ekran startowy, ale granie wymaga połączenia.
 - Konta: nick + hasło albo Google, trwała baza Postgres, powrót do meczu po odświeżeniu strony (30 s), ochrona przed botami.
 
 Statystyki, passa i wykres liczą **tylko mecze rankingowe**. Czasy: tylko z rozwiązanych plansz (nie z poddania ani rozłączenia). Historia zawiera wszystkie mecze konta (też towarzyskie i ze znajomym, z oznaczeniem trybu).
@@ -20,6 +24,7 @@ Statystyki, passa i wykres liczą **tylko mecze rankingowe**. Czasy: tylko z roz
 package.json
 server.js            # gra, matchmaking, Elo, konta, baza, statystyki, zgłoszenia, bany
 public/index.html    # gra
+public/sw.js, manifest.webmanifest, icon-*.png, icon.svg   # aplikacja na telefon (PWA)
 public/admin.html    # panel admina (/admin.html)
 ```
 

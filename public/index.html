@@ -2,13 +2,26 @@
 <html lang="pl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" id="themeColor" content="#161512">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sudoku Duel">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Sudoku Duel</title>
 <style>
-:root{--bg:#161512;--panel:#262421;--panel2:#312e2b;--text:#e8e6e3;--muted:#989795;--green:#81b64c;--red:#e5534b;--blue:#4a9eed;--line:#4a4743;--gold:#f0b429}
+:root{--bg:#161512;--panel:#262421;--panel2:#312e2b;--text:#e8e6e3;--muted:#989795;--green:#81b64c;--red:#e5534b;--blue:#4a9eed;--line:#4a4743;--gold:#f0b429;
+ --b-frame:#d8d5d0;--b-cell:#f3f1ee;--b-given:#111;--b-user:#1d4ed8;--b-row:#e4e9f2;--b-sel:#bcd4f5;--b-same:#a6c4f0;--b-bad:#f7a8a4;--b-thin:#b9b6b1;--b-thick:#333;--b-note:#4b5563;--b-notesel:#f5e3a0;--b-done:#9be28a;--b-glow:none}
+:root[data-theme=light]{--bg:#f2f0ec;--panel:#fff;--panel2:#ebe8e2;--text:#1f1d1a;--muted:#6b6862;--line:#d4d0c8;--gold:#b7791f}
+:root[data-board=wood]{--b-frame:#6b4423;--b-cell:#ecd3a5;--b-given:#2b1a0a;--b-user:#8b2e0f;--b-row:#e0c28c;--b-sel:#cfa15b;--b-same:#d9b574;--b-bad:#e9907a;--b-thin:#bfa070;--b-thick:#5a3a1a;--b-note:#6b5230;--b-notesel:#f3d98a;--b-done:#b5d981}
+:root[data-board=neon]{--b-frame:#ff2bd6;--b-cell:#0c1022;--b-given:#e8f1ff;--b-user:#19e6ff;--b-row:#141b36;--b-sel:#26356b;--b-same:#2f4380;--b-bad:#6b1236;--b-thin:#232c52;--b-thick:#ff2bd6;--b-note:#8fb3ff;--b-notesel:#3b2a6b;--b-done:#1f7a4d;--b-glow:0 0 8px currentColor}
+:root[data-board=ocean]{--b-frame:#1d4e6b;--b-cell:#eef7fc;--b-given:#0b2540;--b-user:#0369a1;--b-row:#d9ecf7;--b-sel:#a9d3ec;--b-same:#92c3e3;--b-bad:#f5b5b5;--b-thin:#a8c6d8;--b-thick:#1d4e6b;--b-note:#3b5d73;--b-notesel:#f7e7a1;--b-done:#9be2c0}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;min-height:100vh;display:flex;justify-content:center}
-#app{width:100%;max-width:520px;padding:16px}
+#app{width:100%;max-width:520px;padding:max(16px,env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) max(16px,env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))}
 h1{margin:8px 0 4px;font-size:28px}
 h1 span{color:var(--green)}
 .sub{color:var(--muted);margin:0 0 20px}
@@ -35,7 +48,7 @@ button:active:not(:disabled){transform:scale(.98)}
 table{width:100%;border-collapse:collapse}
 td,th{padding:6px 4px;text-align:left;font-size:15px}
 th{color:var(--muted);font-weight:500}
-tr:nth-child(even) td{background:rgba(255,255,255,.03)}
+tr:nth-child(even) td{background:rgba(127,127,127,.08)}
 .hidden{display:none!important}
 .center{text-align:center}
 .pulse{animation:pulse 1.2s infinite}
@@ -55,20 +68,27 @@ tr:nth-child(even) td{background:rgba(255,255,255,.03)}
 .prog.opp div{background:var(--red)}
 #timer{font-size:26px;font-weight:800;font-variant-numeric:tabular-nums;min-width:90px;text-align:center}
 #oppnote{color:var(--gold);font-size:13px;min-height:18px;margin-bottom:4px}
-#board{display:grid;grid-template-columns:repeat(9,1fr);border:3px solid #d8d5d0;border-radius:6px;overflow:hidden;background:#d8d5d0;aspect-ratio:1/1;user-select:none;position:relative;touch-action:manipulation}
-.c{display:flex;align-items:center;justify-content:center;background:#f3f1ee;color:#1d4ed8;font-size:clamp(18px,6vw,30px);font-weight:600;border:.5px solid #b9b6b1;cursor:pointer;overflow:hidden}
-.c.g{color:#111;font-weight:800}
-.c.r{background:#e4e9f2}
-.c.s{background:#bcd4f5}
-.c.same{background:#a6c4f0}
-.c.bad{background:#f7a8a4;animation:shake .3s}
-.c.br{border-right:2px solid #333}
-.c.bb{border-bottom:2px solid #333}
-#board.notes .c.s{background:#f5e3a0}
-.nts{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);width:100%;height:100%;font-size:clamp(8px,2.4vw,12px);color:#4b5563;font-weight:600;line-height:1}
+#board{display:grid;grid-template-columns:repeat(9,1fr);border:3px solid var(--b-frame);border-radius:6px;overflow:hidden;background:var(--b-frame);aspect-ratio:1/1;user-select:none;position:relative;touch-action:manipulation;width:min(100%,max(270px,calc(100vh - 385px)));margin:0 auto}
+@supports (height:100dvh){#board{width:min(100%,max(270px,calc(100dvh - 385px)))}}
+.c{display:flex;align-items:center;justify-content:center;background:var(--b-cell);color:var(--b-user);text-shadow:var(--b-glow);font-size:clamp(18px,6vw,30px);font-weight:600;border:.5px solid var(--b-thin);cursor:pointer;overflow:hidden}
+.c.g{color:var(--b-given);font-weight:800}
+.c.r{background:var(--b-row)}
+.c.s{background:var(--b-sel)}
+.c.same{background:var(--b-same)}
+.c.bad{background:var(--b-bad);animation:shake .3s}
+.c.br{border-right:2px solid var(--b-thick)}
+.c.bb{border-bottom:2px solid var(--b-thick)}
+#board.notes .c.s{background:var(--b-notesel)}
+.nts{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,1fr);width:100%;height:100%;font-size:clamp(8px,2.4vw,12px);color:var(--b-note);font-weight:600;line-height:1}
 .nts i{font-style:normal;display:flex;align-items:center;justify-content:center}
 @keyframes shake{25%{transform:translateX(-3px)}75%{transform:translateX(3px)}}
 #overlay{position:absolute;inset:0;background:rgba(22,21,18,.88);display:flex;align-items:center;justify-content:center;font-size:90px;font-weight:900;color:#fff;z-index:5}
+#overlay.pop{animation:pop .5s ease-out}
+@keyframes pop{0%{transform:scale(.4);opacity:0}45%{transform:scale(1.25);opacity:1}100%{transform:scale(1)}}
+.c.done{animation:done .7s ease both;position:relative;z-index:2}
+@keyframes done{0%{background:var(--b-done);transform:scale(1)}40%{background:var(--b-done);transform:scale(1.18)}100%{transform:scale(1)}}
+#confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50}
+@media (prefers-reduced-motion:reduce){.pulse{animation:none}}
 #pad{display:grid;grid-template-columns:repeat(9,1fr);gap:6px;margin-top:12px}
 #pad button{margin:0;padding:12px 0;font-size:22px;background:var(--panel2);color:var(--text)}
 #pad button.done{opacity:.25}
@@ -88,11 +108,29 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 .modal .card{width:100%;max-width:420px;margin:0}
 .seg.col{flex-direction:column}
 .seg.col button{font-size:15px;padding:12px;text-align:left}
+.seg.wrap{flex-wrap:wrap}.seg.wrap button{flex:1 1 40%}
+.lbl{color:var(--muted);font-size:13px;margin-top:14px}
+#gear{position:fixed;top:max(10px,env(safe-area-inset-top));right:max(10px,env(safe-area-inset-right));width:42px;height:42px;padding:0;margin:0;border-radius:50%;background:var(--panel);color:var(--text);border:1px solid var(--line);font-size:20px;z-index:15}
+#sPrev{display:grid;grid-template-columns:repeat(6,1fr);width:100%;max-width:240px;margin:12px auto 0;border:3px solid var(--b-frame);border-radius:6px;overflow:hidden;background:var(--b-frame)}
+#sPrev .c{aspect-ratio:1/1;font-size:20px;cursor:default}
+#tools button.on{background:var(--gold);color:#111}
+#mini{display:grid;grid-template-columns:repeat(9,1fr);width:72px;height:72px;flex:0 0 72px;border:2px solid var(--line);border-radius:6px;overflow:hidden;background:var(--panel2);cursor:pointer;transition:width .2s,height .2s}
+#mini i{background:var(--panel2);border:.5px solid rgba(127,127,127,.18)}
+#mini i.g{background:rgba(127,127,127,.4)}
+#mini i.f{background:var(--red)}
+#mini i.mr{border-right:1.5px solid var(--line)}#mini i.mb{border-bottom:1.5px solid var(--line)}
+#mini.big{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(88vw,340px);height:min(88vw,340px);z-index:35;box-shadow:0 0 0 100vmax rgba(0,0,0,.65)}
+#minilbl{position:fixed;left:50%;top:calc(50% + min(44vw,170px) + 14px);transform:translateX(-50%);z-index:36;color:#fff;font-size:14px;text-align:center}
+#emoGrid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+#emoGrid button{margin:0;padding:10px 2px;font-size:26px;background:var(--panel2);color:var(--text);line-height:1.1}
+#emoGrid button small{display:block;font-size:11px;font-weight:600;color:var(--muted);margin-top:4px}
+#bubble{position:fixed;top:max(12px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);background:var(--panel);color:var(--text);border:1px solid var(--line);padding:8px 16px;border-radius:99px;font-weight:700;z-index:45;box-shadow:0 4px 18px rgba(0,0,0,.35);animation:pop .35s ease-out;white-space:nowrap;max-width:94vw;overflow:hidden;text-overflow:ellipsis}
 </style>
 </head>
 <body>
 <div id="banner" class="hidden"></div>
 <div id="toast" class="hidden"></div>
+<button id="gear" aria-label="Ustawienia">⚙</button>
 <div id="app">
 
   <!-- MENU -->
@@ -170,6 +208,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
   <div id="game" class="hidden">
     <div class="bar">
       <div class="pl"><div class="n" id="oppName"></div><div class="e" id="oppElo"></div><div class="prog opp" id="oppProg"><div id="oppBar"></div></div></div>
+      <div id="mini" class="hidden" role="button" aria-label="Podgląd przeciwnika (dotknij, aby powiększyć)"></div>
       <div id="timer">0:00</div>
     </div>
     <div id="oppnote"></div>
@@ -179,6 +218,8 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <div id="tools">
       <button id="noteBtn">✎ Notatki: wył.</button>
       <button id="eraseBtn" class="hidden">⌫ Usuń</button>
+      <button id="chatBtn" style="flex:0 0 54px" aria-label="Emotki">💬</button>
+      <button id="muteBtn" style="flex:0 0 54px" aria-label="Dźwięk">🔊</button>
     </div>
     <div class="bar" style="margin-top:12px">
       <div class="pl"><div class="n">Ty</div><div class="prog"><div id="meBar"></div></div></div>
@@ -208,6 +249,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <div class="card"><div class="big" id="resElo"></div><div id="resDelta"></div></div>
     <button id="rematch">🔁 Rewanż</button>
     <button class="sec" id="again">⚔ Szukaj nowego przeciwnika</button>
+    <button class="sec small" id="chatRes">💬 Wyślij emotkę</button>
     <button class="sec small" id="reportRes">🚩 Zgłoś przeciwnika</button>
     <button class="sec" id="toMenu">Menu</button>
   </div>
@@ -228,16 +270,97 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
   </div>
 </div>
 
+<!-- EMOTKI -->
+<div id="emotes" class="modal hidden">
+  <div class="card">
+    <b>💬 Wyślij emotkę przeciwnikowi</b>
+    <div id="emoGrid"></div>
+    <button class="sec" id="emoClose">Zamknij</button>
+  </div>
+</div>
+<div id="bubble" class="hidden"></div>
+<div id="minilbl" class="hidden">Pola wypełnione przez przeciwnika</div>
+
+<!-- USTAWIENIA -->
+<div id="settings" class="modal hidden">
+  <div class="card">
+    <b>⚙ Ustawienia</b>
+    <div class="lbl">Motyw aplikacji</div><div class="seg" id="sTheme"></div>
+    <div class="lbl">Motyw planszy</div><div class="seg wrap" id="sBoard"></div>
+    <div id="sPrev"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="sec" id="sSound"></button>
+      <button class="sec" id="sAnim"></button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="sec" id="sPreview"></button>
+      <button class="sec" id="sEmotes"></button>
+    </div>
+    <button class="sec hidden" id="sInstall">📲 Zainstaluj aplikację</button>
+    <p class="info hidden" id="sIosHint">Na iPhonie: Udostępnij → „Dodaj do ekranu początkowego”.</p>
+    <button id="sClose">Gotowe</button>
+  </div>
+</div>
+
 <script>
 const $ = id => document.getElementById(id);
 const screens = ['menu','searching','game','result','profile'];
-function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); }
+function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
   get(k){ try { return window[area].getItem(k); } catch { return null; } },
   set(k,v){ try { window[area].setItem(k,v); } catch {} },
   del(k){ try { window[area].removeItem(k); } catch {} } }; }
 const store = mkStore('localStorage'), sess = mkStore('sessionStorage');
+
+// ---------- ustawienia: motywy, dźwięk, animacje ----------
+const reducedMotion = !!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
+let settings = Object.assign({ theme: 'auto', board: 'paper', sound: true, anim: !reducedMotion, preview: true, emotes: true },
+  (() => { try { return JSON.parse(store.get('settings') || '{}'); } catch { return {}; } })());
+function saveSettings(){ store.set('settings', JSON.stringify(settings)); }
+function applyTheme(){
+  const lightPref = window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches;
+  const dark = settings.theme === 'auto' ? !lightPref : settings.theme === 'dark';
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  document.documentElement.dataset.board = settings.board;
+  $('themeColor').content = dark ? '#161512' : '#f2f0ec';
+}
+try { matchMedia('(prefers-color-scheme: light)').addEventListener('change', applyTheme); } catch {}
+applyTheme();
+
+// dźwięki generowane w przeglądarce (bez plików)
+const Snd = (() => {
+  let ctx = null;
+  const ac = () => {
+    if (!ctx){ try { ctx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    return ctx;
+  };
+  function tone(f, t0, d, type, vol, slide){
+    const c = ac(); if (!c) return;
+    const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + t0;
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(slide, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .01); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + d + .02);
+  }
+  const S = {
+    click: () => tone(700, 0, .04, 'square', .025),
+    note:  () => tone(520, 0, .05, 'square', .03),
+    ok:    () => tone(880, 0, .1, 'sine', .12),
+    place: () => tone(440, 0, .07, 'triangle', .1),
+    wrong: () => tone(190, 0, .28, 'sawtooth', .1, 90),
+    unit:  () => [784, 988, 1175].forEach((f, i) => tone(f, i * .07, .2, 'triangle', .1)),
+    beep:  () => tone(520, 0, .13, 'sine', .12),
+    go:    () => tone(1040, 0, .3, 'sine', .14),
+    win:   () => [523, 659, 784, 1047].forEach((f, i) => tone(f, i * .12, .32, 'triangle', .14)),
+    lose:  () => [392, 330, 262].forEach((f, i) => tone(f, i * .18, .32, 'sine', .11))
+  };
+  const play = name => { if (settings.sound) try { S[name](); } catch {} };
+  play.unlock = ac;
+  return play;
+})();
+document.addEventListener('pointerdown', () => { try { Snd.unlock(); } catch {} }, { once: true });
 
 const DIFFS = {
   easy:     { label: 'Łatwy',    lock: 2 },
@@ -288,12 +411,17 @@ function onMsg(m){
   else if (m.type === 'ok'){
     G.cur[sel2idx(m)] = m.v; if (m.v) placed(sel2idx(m), m.v);
     $('meBar').style.width = (m.filled / G.empties * 100) + '%'; render();
+    if (m.v){ Snd(G.blind ? 'place' : 'ok'); afterPlace(sel2idx(m)); }
   }
   else if (m.type === 'wrong'){
-    lockUntil = Date.now() + m.lockMs; flash(m.r*9+m.c);
+    lockUntil = Date.now() + m.lockMs; flash(m.r*9+m.c); Snd('wrong');
   }
   else if (m.type === 'full') toast('Plansza jest pełna, ale gdzieś jest błąd. Szukaj dalej!');
-  else if (m.type === 'opp') $('oppBar').style.width = (m.filled / G.empties * 100) + '%';
+  else if (m.type === 'opp'){
+    $('oppBar').style.width = (m.filled / G.empties * 100) + '%';
+    if (G && m.cell != null){ G.oppMask[m.cell] = m.on; renderMini(); }
+  }
+  else if (m.type === 'emote') showEmote(m);
   else if (m.type === 'oppstatus') oppStatus(m);
   else if (m.type === 'result') endMatch(m);
   else if (m.type === 'notice') toast(m.text);
@@ -306,7 +434,7 @@ function onMsg(m){
   }
 }
 const sel2idx = m => m.r * 9 + m.c;
-function flash(i){ const el = cells[i]; el.classList.add('bad'); setTimeout(() => el.classList.remove('bad'), 400); }
+function flash(i){ const el = cells[i]; el.style.animationDelay = '0ms'; el.classList.add('bad'); setTimeout(() => el.classList.remove('bad'), 400); }
 
 function oppStatus(m){
   clearInterval(oppT);
@@ -422,6 +550,7 @@ const cells = [];
 for (let i = 0; i < 81; i++){
   const d = document.createElement('div'); d.className = 'c';
   d.onclick = () => {
+    Snd('click');
     const t = performance.now();
     if (G && lastClick.i === i && t - lastClick.t < 350 && !G.puzzle[i] && G.cur[i] === 0){ setNoteMode(!noteMode); lastClick.t = 0; }
     else lastClick = { i, t };
@@ -436,6 +565,7 @@ for (let v = 1; v <= 9; v++){
 }
 
 function setNoteMode(on){
+  if (on !== noteMode) Snd('note');
   noteMode = on;
   $('noteBtn').classList.toggle('on', on);
   $('noteBtn').textContent = '✎ Notatki: ' + (on ? 'wł.' : 'wył.');
@@ -455,9 +585,43 @@ function placed(i, v){                        // po wpisaniu cyfry: czyścimy no
   saveNotes();
 }
 
+const animUntil = new Array(81).fill(0);
+function afterPlace(i){                       // ukończony rząd, kolumna lub blok: dźwięk + krótkie podświetlenie
+  if (!G || G.blind) return;                  // w Hardcore nic nie zdradzamy
+  const r = (i / 9) | 0, c = i % 9, row = [], col = [], blk = [], set = new Set();
+  for (let k = 0; k < 9; k++){
+    row.push(r * 9 + k); col.push(k * 9 + c);
+    blk.push(((r / 3 | 0) * 3 + (k / 3 | 0)) * 9 + (c / 3 | 0) * 3 + k % 3);
+  }
+  for (const unit of [row, col, blk]) if (unit.every(k => G.cur[k] !== 0)) unit.forEach(k => set.add(k));
+  if (!set.size) return;
+  Snd('unit');
+  if (!settings.anim) return;
+  const arr = [...set], t = performance.now();
+  arr.forEach((k, n) => { animUntil[k] = t + 1100 + n * 30; cells[k].style.animationDelay = (n * 30) + 'ms'; });
+  render(); setTimeout(render, 1300 + arr.length * 30);
+}
+function confetti(){
+  if (!settings.anim) return;
+  const cv = document.createElement('canvas'); cv.id = 'confetti'; document.body.appendChild(cv);
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), W = cv.width = innerWidth * dpr, H = cv.height = innerHeight * dpr, g = cv.getContext('2d');
+  const cols = ['#81b64c', '#f0b429', '#4a9eed', '#e5534b', '#c77dff', '#ffffff'];
+  const P = Array.from({ length: 140 }, () => ({ x: Math.random() * W, y: -Math.random() * H * .5, vx: (Math.random() - .5) * 4 * dpr, vy: (2 + Math.random() * 4) * dpr,
+    w: (6 + Math.random() * 6) * dpr, h: (8 + Math.random() * 8) * dpr, a: Math.random() * 6.28, va: (Math.random() - .5) * .3, c: cols[(Math.random() * cols.length) | 0] }));
+  const t0 = performance.now();
+  (function frame(t){
+    const e = t - t0; g.clearRect(0, 0, W, H);
+    for (const p of P){ p.x += p.vx; p.y += p.vy; p.vy += .04 * dpr; p.a += p.va;
+      g.save(); g.translate(p.x, p.y); g.rotate(p.a); g.globalAlpha = Math.max(0, Math.min(1, (3200 - e) / 800)); g.fillStyle = p.c; g.fillRect(-p.w / 2, -p.h / 2, p.w, p.h); g.restore(); }
+    if (e < 3200) requestAnimationFrame(frame); else cv.remove();
+  })(t0);
+}
+
 function startMatch(m){
+  animUntil.fill(0);
   const sig = m.puzzle.join('');
-  G = { puzzle: m.puzzle, cur: m.cur.slice(), empties: m.empties, diff: m.diff, blind: m.blind, sig, solo: null };
+  G = { puzzle: m.puzzle, cur: m.cur.slice(), empties: m.empties, diff: m.diff, blind: m.blind, sig, solo: null,
+        oppMask: m.oppMask ? m.oppMask.slice() : new Array(81).fill(0) };
   notes = new Array(81).fill(0);
   try { const s = JSON.parse(sess.get('notes') || 'null'); if (s && s.sig === sig) notes = s.notes; } catch {}
   setNoteMode(false);
@@ -466,6 +630,7 @@ function startMatch(m){
   $('oppName').textContent = m.opp.name;
   $('oppElo').textContent = DIFFS[m.diff].label + ' · ' + mode + (m.opp.elo != null ? ' · Elo ' + m.opp.elo : '');
   $('oppProg').classList.remove('hidden');
+  $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); renderMini(); $('chatBtn').classList.remove('hidden');
   $('oppBar').style.width = (m.oppFilled / m.empties * 100) + '%';
   $('meBar').style.width = (m.filled / m.empties * 100) + '%';
   $('oppnote').textContent = ''; clearInterval(oppT);
@@ -481,11 +646,18 @@ function startMatch(m){
 
 function startTimer(t0){
   clearInterval(timerInt);
-  const ov = $('overlay');
+  const ov = $('overlay'); let lastN = null, goShown = false;
+  const pop = () => { ov.classList.remove('pop'); void ov.offsetWidth; ov.classList.add('pop'); };
   const tick = () => {
     const el = performance.now() - t0;
-    if (el < 0){ ov.classList.remove('hidden'); ov.textContent = Math.ceil(-el / 1000); $('timer').textContent = '0:00'; return; }
-    ov.classList.add('hidden');
+    if (el < 0){
+      const n = Math.ceil(-el / 1000);
+      ov.classList.remove('hidden');
+      if (n !== lastN){ lastN = n; ov.textContent = n; pop(); Snd('beep'); }
+      $('timer').textContent = '0:00'; return;
+    }
+    if (lastN !== null && !goShown){ goShown = true; ov.textContent = 'START!'; pop(); Snd('go'); setTimeout(() => ov.classList.add('hidden'), 650); }
+    else if (lastN === null) ov.classList.add('hidden');
     $('timer').textContent = fmt(el);
     if (!G || G.solo){ $('lock').textContent = ''; return; }
     const rem = lockUntil - Date.now();
@@ -497,7 +669,7 @@ function startTimer(t0){
 function render(){
   if (!G) return;
   const sv = sel >= 0 ? G.cur[sel] : 0;
-  const counts = Array(10).fill(0);
+  const counts = Array(10).fill(0), nowT = performance.now();
   for (let i = 0; i < 81; i++){
     const el = cells[i], v = G.cur[i], r = (i/9)|0, c = i%9;
     if (v){ el.textContent = v; counts[v]++; }
@@ -510,6 +682,7 @@ function render(){
     if (c === 2 || c === 5) cls += ' br';
     if (r === 2 || r === 5) cls += ' bb';
     if (G.puzzle[i]) cls += ' g';
+    if (animUntil[i] > nowT) cls += ' done';
     if (sel >= 0){
       const sr = (sel/9)|0, sc = sel%9;
       if (i === sel) cls += ' s';
@@ -567,11 +740,12 @@ async function startSolo(diff){
   const D = DIFFS[diff];
   G = { puzzle: d.puzzle, cur: d.puzzle.slice(), empties: d.puzzle.filter(v => !v).length, diff, blind: !!D.blind,
         sig: 'solo', solo: { solution: d.solution, errors: 0, filled: 0, t0: performance.now(), done: false } };
-  notes = new Array(81).fill(0); setNoteMode(false); sel = -1; lockUntil = 0;
+  notes = new Array(81).fill(0); setNoteMode(false); sel = -1; lockUntil = 0; animUntil.fill(0);
   lastPlay = { kind: 'solo', diff };
   $('oppName').textContent = 'Solo · ' + D.label;
   updateSoloInfo();
   $('oppProg').classList.add('hidden'); $('oppnote').textContent = ''; clearInterval(oppT);
+  renderMini(); $('chatBtn').classList.add('hidden');
   $('meBar').style.width = '0'; $('lock').textContent = ''; banner('');
   $('eraseBtn').classList.toggle('hidden', !D.blind);
   $('reportGame').classList.add('hidden');
@@ -588,7 +762,7 @@ function soloMove(v){
   if (G.blind){
     if (cur === v) return;
     S.filled += (v ? 1 : 0) - (cur ? 1 : 0);
-    G.cur[sel] = v; if (v) placed(sel, v);
+    G.cur[sel] = v; if (v){ placed(sel, v); Snd('place'); }
     $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render();
     if (S.filled >= G.empties){
       if (G.cur.every((x, k) => x === S.solution[k])) soloFinish();
@@ -598,10 +772,10 @@ function soloMove(v){
   }
   if (cur !== 0) return;
   if (v === S.solution[sel]){
-    G.cur[sel] = v; S.filled++; placed(sel, v);
-    $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render();
+    G.cur[sel] = v; S.filled++; placed(sel, v); Snd('ok');
+    $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render(); afterPlace(sel);
     if (S.filled >= G.empties) soloFinish();
-  } else { S.errors++; flash(sel); updateSoloInfo(); }
+  } else { S.errors++; flash(sel); Snd('wrong'); updateSoloInfo(); }
 }
 function soloFinish(){
   const S = G.solo; S.done = true;
@@ -609,12 +783,12 @@ function soloFinish(){
   const ms = performance.now() - S.t0, key = 'best_' + G.diff;
   const prev = +store.get(key) || 0, record = !prev || ms < prev;
   if (record) store.set(key, String(Math.round(ms)));
-  $('resTitle').textContent = 'Rozwiązane! 🎉'; $('resTitle').className = 'big win';
+  $('resTitle').textContent = 'Rozwiązane! 🎉'; $('resTitle').className = 'big win'; Snd('win'); confetti();
   $('resSub').textContent = DIFFS[G.diff].label + ' · solo' + (G.blind ? '' : ' · błędy: ' + S.errors);
   $('resElo').textContent = fmt(ms);
   $('resDelta').textContent = record ? '🏅 Nowy rekord!' : 'Twój rekord: ' + fmt(prev);
   $('resDelta').className = record ? 'win' : 'neutral';
-  $('rematch').classList.add('hidden'); $('reportRes').classList.add('hidden');
+  $('rematch').classList.add('hidden'); $('reportRes').classList.add('hidden'); $('chatRes').classList.add('hidden');
   $('again').textContent = '🧩 Kolejna plansza';
   G = null; show('result');
 }
@@ -646,8 +820,9 @@ function endMatch(m){
     $('resDelta').textContent = (m.friend ? 'Pojedynek ze znajomym' : 'Gra towarzyska') + ' – ranking bez zmian';
     $('resDelta').className = 'neutral';
   }
+  if (!m.void) { if (m.won){ Snd('win'); confetti(); } else Snd('lose'); }
   const rb = $('rematch'); rb.classList.remove('hidden'); rb.disabled = false; rb.className = ''; rb.textContent = '🔁 Rewanż';
-  $('reportRes').classList.remove('hidden');
+  $('reportRes').classList.remove('hidden'); $('chatRes').classList.remove('hidden');
   $('again').textContent = '⚔ Szukaj nowego przeciwnika';
   show('result');
 }
@@ -769,6 +944,100 @@ $('repSend').onclick = () => {
 $('repCancel').onclick = () => $('reportBox').classList.add('hidden');
 $('reportGame').onclick = openReport;
 $('reportRes').onclick = openReport;
+
+// ---------- podgląd przeciwnika (tylko które pola ma wypełnione, bez cyfr) ----------
+const miniCells = [];
+for (let i = 0; i < 81; i++){
+  const e = document.createElement('i'), r = (i / 9) | 0, c = i % 9;
+  if (c === 2 || c === 5) e.className = 'mr';
+  if (r === 2 || r === 5) e.className += ' mb';
+  $('mini').appendChild(e); miniCells.push(e);
+}
+function renderMini(){
+  const on = !!(G && !G.solo && settings.preview);
+  $('mini').classList.toggle('hidden', !on);
+  if (!on){ $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); return; }
+  for (let i = 0; i < 81; i++){
+    const base = miniCells[i].className.replace(/\b(g|f)\b/g, '').trim();
+    miniCells[i].className = (base + (G.puzzle[i] ? ' g' : G.oppMask[i] ? ' f' : '')).trim();
+  }
+}
+$('mini').onclick = e => {
+  e.stopPropagation();
+  const big = $('mini').classList.toggle('big'); $('minilbl').classList.toggle('hidden', !big);
+};
+document.addEventListener('click', () => { if ($('mini').classList.contains('big')){ $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); } });
+
+// ---------- emotki ----------
+const EMOTES = [['👍','Dobra robota!'],['🔥','Szybko!'],['🤔','Hmm…'],['😅','Uff…'],['😎','Łatwizna'],['👏','Brawo!'],['🤝','GG'],['😱','Wow!']];
+let emoteCool = 0, bubbleT = null;
+EMOTES.forEach(([ico, txt], id) => {
+  const b = document.createElement('button'); b.innerHTML = ico + '<small>' + txt + '</small>';
+  b.onclick = () => {
+    if (Date.now() < emoteCool){ $('emotes').classList.add('hidden'); toast('Poczekaj chwilę przed kolejną emotką.'); return; }
+    emoteCool = Date.now() + 1600; tx({ type:'emote', id }); $('emotes').classList.add('hidden'); toast('Wysłano: ' + ico);
+  };
+  $('emoGrid').appendChild(b);
+});
+$('chatBtn').onclick = () => $('emotes').classList.remove('hidden');
+$('chatRes').onclick = () => $('emotes').classList.remove('hidden');
+$('emoClose').onclick = () => $('emotes').classList.add('hidden');
+$('emotes').onclick = e => { if (e.target === $('emotes')) $('emotes').classList.add('hidden'); };
+function showEmote(m){
+  if (!settings.emotes || !EMOTES[m.id]) return;
+  const el = $('bubble'), [ico, txt] = EMOTES[m.id];
+  el.textContent = m.from + ': ' + ico + ' ' + txt;
+  el.classList.remove('hidden'); el.style.animation = 'none'; void el.offsetWidth; el.style.animation = '';
+  Snd('note'); clearTimeout(bubbleT); bubbleT = setTimeout(() => el.classList.add('hidden'), 2800);
+}
+
+// ---------- ustawienia (UI) ----------
+(function buildPreview(){
+  const sample = [['5','g'],['','r'],['3',''],['7','g'],['9','same'],['',''],['','r'],['9','same'],['','s'],['2','g'],['6',''],['','r']];
+  sample.forEach(([t, k], i) => {
+    const d = document.createElement('div'); d.className = 'c' + (k ? ' ' + k : '') + (i % 6 === 2 ? ' br' : ''); d.textContent = t; $('sPrev').appendChild(d);
+  });
+})();
+function renderSettings(){
+  const seg = (id, opts, key) => {
+    const el = $(id); el.innerHTML = '';
+    opts.forEach(([v, l]) => {
+      const b = document.createElement('button'); b.textContent = l; b.className = settings[key] === v ? 'on' : '';
+      b.onclick = () => { settings[key] = v; saveSettings(); applyTheme(); renderSettings(); };
+      el.appendChild(b);
+    });
+  };
+  seg('sTheme', [['auto','Auto'],['dark','Ciemny'],['light','Jasny']], 'theme');
+  seg('sBoard', [['paper','📄 Papier'],['wood','🪵 Drewno'],['neon','💜 Neon'],['ocean','🌊 Ocean']], 'board');
+  $('sSound').textContent = (settings.sound ? '🔊' : '🔇') + ' Dźwięk: ' + (settings.sound ? 'wł.' : 'wył.');
+  $('sAnim').textContent = '✨ Animacje: ' + (settings.anim ? 'wł.' : 'wył.');
+  $('sPreview').textContent = '👁 Podgląd rywala: ' + (settings.preview ? 'wł.' : 'wył.');
+  $('sEmotes').textContent = '💬 Emotki rywala: ' + (settings.emotes ? 'wł.' : 'wył.');
+  $('muteBtn').textContent = settings.sound ? '🔊' : '🔇';
+}
+function toggleSound(){ settings.sound = !settings.sound; saveSettings(); renderSettings(); Snd('ok'); }
+$('gear').onclick = () => { renderSettings(); $('settings').classList.remove('hidden'); };
+$('sClose').onclick = () => $('settings').classList.add('hidden');
+$('settings').onclick = e => { if (e.target === $('settings')) $('settings').classList.add('hidden'); };
+$('sSound').onclick = toggleSound; $('muteBtn').onclick = toggleSound;
+$('sAnim').onclick = () => { settings.anim = !settings.anim; saveSettings(); renderSettings(); };
+$('sPreview').onclick = () => { settings.preview = !settings.preview; saveSettings(); renderSettings(); renderMini(); };
+$('sEmotes').onclick = () => { settings.emotes = !settings.emotes; saveSettings(); renderSettings(); };
+renderSettings();
+
+// ---------- aplikacja na telefon (PWA) ----------
+let deferredInstall = null;
+addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredInstall = e; $('sInstall').classList.remove('hidden'); });
+addEventListener('appinstalled', () => { deferredInstall = null; $('sInstall').classList.add('hidden'); });
+$('sInstall').onclick = async () => {
+  if (!deferredInstall) return;
+  deferredInstall.prompt(); try { await deferredInstall.userChoice; } catch {}
+  deferredInstall = null; $('sInstall').classList.add('hidden');
+};
+if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !(navigator.standalone || (matchMedia && matchMedia('(display-mode: standalone)').matches)))
+  $('sIosHint').classList.remove('hidden');
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol))
+  addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
 // ---------- start ----------
 renderMode();
