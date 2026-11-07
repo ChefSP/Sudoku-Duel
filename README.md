@@ -14,6 +14,8 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 - **Podgląd przeciwnika:** miniplansza w nagłówku meczu pokazuje, które pola rywal ma wypełnione (bez cyfr, także w Hardcore). Dotknięcie powiększa ją na środek ekranu. Można wyłączyć w ustawieniach.
 - **Emotki:** 8 gotowych (👍 🔥 🤔 😅 😎 👏 🤝 😱), przycisk 💬 w meczu i na ekranie wyniku ("GG"). Bez wolnego tekstu, limit 1 na 1,5 s i 30 na mecz. Rywala można wyciszyć w ustawieniach.
 - **Telefon / PWA:** układ dopasowany do małych ekranów i wcięć ekranu, aplikację można zainstalować (Android: przycisk w ustawieniach, iPhone: Udostępnij → Dodaj do ekranu początkowego). Bez internetu otwiera się zapisany ekran startowy, ale granie wymaga połączenia.
+- **Rangi:** Brąz 🥉 (0+), Srebro 🥈 (1100+), Złoto 🥇 (1250+), Diament 💎 (1400+), liczone osobno na każdym poziomie. Pasek postępu w menu, komunikat o awansie/spadku po meczu, ikona rangi w rankingu i przy rywalu.
+- **Sezony:** co miesiąc (czas polski) ranking się zeruje "miękko": Elo wraca w stronę 1000 (domyślnie zostaje 50% różnicy). TOP 3 na każdym poziomie (min. 5 meczów w sezonie) dostaje odznakę 🥇🥈🥉 widoczną w rankingu i w profilu. Tabela pokazuje tylko graczy, którzy grali w bieżącym sezonie.
 - Konta: nick + hasło albo Google, trwała baza Postgres, powrót do meczu po odświeżeniu strony (30 s), ochrona przed botami.
 
 Statystyki, passa i wykres liczą **tylko mecze rankingowe**. Czasy: tylko z rozwiązanych plansz (nie z poddania ani rozłączenia). Historia zawiera wszystkie mecze konta (też towarzyskie i ze znajomym, z oznaczeniem trybu).
@@ -34,10 +36,11 @@ public/admin.html    # panel admina (/admin.html)
 |---|---|---|
 | `DATABASE_URL` | adres Postgres (Neon), żeby dane przetrwały restarty | tak (na serio) |
 | `ADMIN_PASSWORD` | hasło do panelu `/admin.html`. Bez niego panel jest wyłączony | zalecane |
+| `SEASON_KEEP` | ile różnicy od 1000 zostaje po resecie sezonu: `1` = brak resetu, `0.5` = połowa (domyślnie), `0` = pełny reset | nie |
 | `GOOGLE_CLIENT_ID` | przycisk "Zaloguj przez Google" | nie |
 | `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` | captcha przy zakładaniu konta | nie (zalecane) |
 
-Tabele (`users`, `reports`, `bans`) tworzą się same. Konfiguracja Neon, Google i Turnstile: bez zmian względem poprzedniej wersji (Neon: neon.tech → Connect → connection string → `DATABASE_URL`).
+Tabele (`users`, `reports`, `bans`, `meta`) tworzą się same. Konfiguracja Neon, Google i Turnstile: bez zmian względem poprzedniej wersji (Neon: neon.tech → Connect → connection string → `DATABASE_URL`).
 
 ## Panel admina
 
@@ -60,7 +63,7 @@ npm start      # http://localhost:3000
 
 ## Ustawienia w `server.js` (góra pliku)
 
-`DIFFS` (liczba pustych pól i długość blokady), `GRACE_MS` (czas na powrót do meczu), `HISTORY_MAX` i `ELO_LOG_MAX` (ile historii pamiętamy), progi anty-botowe `MIN_MOVE_MS`, `MIN_MS_PER_CELL`, `FLAGS_HIDE`.
+Progi rang: `RANKS`, minimum meczów do odznak: `SEASON_MIN_GAMES`. `DIFFS` (liczba pustych pól i długość blokady), `GRACE_MS` (czas na powrót do meczu), `HISTORY_MAX` i `ELO_LOG_MAX` (ile historii pamiętamy), progi anty-botowe `MIN_MOVE_MS`, `MIN_MS_PER_CELL`, `FLAGS_HIDE`.
 
 ## Ograniczenia anty-botowe (uczciwie)
 

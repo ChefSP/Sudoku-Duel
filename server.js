@@ -25,6 +25,17 @@ const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const REMATCH_MS = 120e3;         // jak długo po meczu można poprosić o rewanż
 const HISTORY_MAX = 100;          // ile ostatnich meczów pamiętamy na konto
 const ELO_LOG_MAX = 200;          // ile punktów wykresu Elo na poziom
+// rangi wg Elo na danym poziomie (min = najniższe Elo tej rangi)
+const RANKS = [
+  { min: 0,    name: 'Brąz',    icon: '🥉' },
+  { min: 1100, name: 'Srebro',  icon: '🥈' },
+  { min: 1250, name: 'Złoto',   icon: '🥇' },
+  { min: 1400, name: 'Diament', icon: '💎' }
+];
+const rankIndex = elo => { let k = 0; RANKS.forEach((r, i) => { if (elo >= r.min) k = i; }); return k; };
+// sezony: co miesiąc (czas polski) ranking się "resetuje". SEASON_KEEP: 1 = bez zmian, 0 = pełny reset do 1000, 0.5 = Elo wraca w połowie do 1000.
+const SEASON_KEEP = process.env.SEASON_KEEP !== undefined ? Math.min(Math.max(+process.env.SEASON_KEEP, 0), 1) : 0.5;
+const SEASON_MIN_GAMES = 5;       // tyle meczów rankingowych w sezonie trzeba rozegrać, by liczyć się do odznak TOP 3
 const COUNTDOWN_MS = 3000;
 const GRACE_MS = process.env.GRACE_MS ? +process.env.GRACE_MS : 30000;   // tyle czekamy na powrót rozłączonego gracza
 const K = 32;                     // współczynnik Elo
@@ -152,13 +163,13 @@ const users = new Map();          // id -> user
 const sessionIndex = new Map();   // sha256(token) -> userId
 const nameIndex = new Map();      // nick małymi literami -> userId (konta i goście: nazwy są unikalne)
 
-const newStats = () => ({ elo: 1000, wins: 0, losses: 0, solved: 0, sumMs: 0, bestMs: 0, streak: 0, bestStreak: 0 });
+const newStats = () => ({ elo: 1000, wins: 0, losses: 0, solved: 0, sumMs: 0, bestMs: 0, streak: 0, bestStreak: 0, sgames: 0 });
 function newUser(name) {
   const now = Date.now();
   return {
     id: crypto.randomUUID(), name, pass: null, google: null, sessions: [],
     stats: Object.fromEntries(Object.keys(DIFFS).map(d => [d, newStats()])),
-    history: [], eloLog: {},
+    history: [], eloLog: {}, badges: [],
     flags: 0, createdAt: now, lastSeen: now
   };
 }
@@ -181,7 +192,7 @@ const ipBanned = ip => liveBan(banIp.get(ip));
 function makeJsonStore() {
   let timer = null;
   const write = () => {
-    const data = JSON.stringify({ version: 3, users: [...users.values()], reports: [...reports.values()], bans: [...banById.values()] });
+    const data = JSON.stringify({ version: 3, users: [...users.values()], reports: [...reports.values()], bans: [...banById.values()], meta });
     fs.writeFile(DATA_FILE + '.tmp', data, err => {
       if (!err) fs.rename(DATA_FILE + '.tmp', DATA_FILE, () => {});
     });
@@ -191,8 +202,8 @@ function makeJsonStore() {
     kind: 'plik JSON',
     async load() {
       let raw;
-      try { raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return { users: [], reports: [], bans: [] }; }
-      if (raw && raw.version >= 2) return { users: raw.users || [], reports: raw.reports || [], bans: raw.bans || [] };
+      try { raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return { users: [], reports: [], bans: [], meta: [] }; }
+      if (raw && raw.version >= 2) return { users: raw.users || [], reports: raw.reports || [], bans: raw.bans || [], meta: raw.meta ? [raw.meta] : [] };
       // stary format: { token: {name, elo, wins, losses} }
       const list = Object.entries(raw || {}).map(([token, o]) => {
         const u = newUser('Guest');
@@ -200,7 +211,7 @@ function makeJsonStore() {
         u.sessions = [sha(token)];
         return u;
       });
-      return { users: list, reports: [], bans: [] };
+      return { users: list, reports: [], bans: [], meta: [] };
     },
     save() { schedule(); },
     remove() { schedule(); }
@@ -213,7 +224,7 @@ function makePgStore(url) {
   const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
   const pool = new Pool({ connectionString: u.toString(), ssl, max: 5 });
   pool.on('error', e => console.error('pg pool:', e.message));
-  const TABLE = { users: 'users', reports: 'reports', bans: 'bans' };    // stała lista (nic od użytkownika nie trafia do SQL)
+  const TABLE = { users: 'users', reports: 'reports', bans: 'bans', meta: 'meta' };    // stała lista (nic od użytkownika nie trafia do SQL)
   return {
     kind: 'Postgres',
     async load() {
@@ -284,6 +295,7 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   for (const d of Object.keys(DIFFS)) u.stats[d] = Object.assign(newStats(), u.stats[d] || {});
   if (!Array.isArray(u.history)) u.history = [];
   if (!u.eloLog || typeof u.eloLog !== 'object') u.eloLog = {};
+  if (!Array.isArray(u.badges)) u.badges = [];
 }
 function pub(u) {
   return { name: u.name, guest: isGuest(u), google: !!u.google, stats: u.stats };
@@ -302,7 +314,7 @@ app.use('/api', (req, res, next) => {              // zablokowany adres IP nie k
 });
 
 app.get('/api/config', (req, res) => {
-  res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null,
+  res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null, ranks: RANKS,
              diffs: Object.fromEntries(Object.entries(DIFFS).map(([k, v]) => [k, { label: v.label, lock: v.lock, blind: !!v.blind }])) });
 });
 
@@ -317,11 +329,17 @@ app.get('/api/solo', (req, res) => {          // plansza do gry jednoosobowej (l
 app.get('/api/leaderboard', (req, res) => {
   const diff = DIFFS[req.query.diff] ? req.query.diff : 'medium';
   const top = [...users.values()]
-    .filter(u => !isGuest(u) && u.stats[diff].wins + u.stats[diff].losses > 0 && u.flags < FLAGS_HIDE && !userBanned(u.id))
+    .filter(u => !isGuest(u) && u.stats[diff].sgames > 0 && u.flags < FLAGS_HIDE && !userBanned(u.id))   // tabela bieżącego sezonu
     .sort((a, b) => b.stats[diff].elo - a.stats[diff].elo)
     .slice(0, 20)
-    .map(u => ({ name: u.name, elo: u.stats[diff].elo, wins: u.stats[diff].wins, losses: u.stats[diff].losses }));
+    .map(u => ({ name: u.name, elo: u.stats[diff].elo, wins: u.stats[diff].wins, losses: u.stats[diff].losses,
+                 badges: [1, 2, 3].map(pl => u.badges.filter(b => b.place === pl).length) }));
   res.json(top);
+});
+
+app.get('/api/season', (req, res) => {
+  const prev = meta.history.length ? meta.history[meta.history.length - 1] : null;
+  res.json({ id: meta.season, endsAt: seasonEnd(meta.season), keep: SEASON_KEEP, minGames: SEASON_MIN_GAMES, prev });
 });
 
 async function verifyTurnstile(token, ip) {
@@ -728,7 +746,7 @@ function endGame(g, winnerIdx, reason, opts = {}) {
   // anty-bot: wygrana szybsza niż człowiek jest w stanie = mecz unieważniony
   const tooFast = g.ranked && reason === 'solved' && ms < g.empties * MIN_MS_PER_CELL;
   const voided = tooFast || !!opts.void;
-  let wDelta = 0, lDelta = 0;
+  let wDelta = 0, lDelta = 0, wRank = null, lRank = null;
   if (tooFast) {
     wu.flags++;
     console.log('Mecz unieważniony (zbyt szybki):', wu.name, ms + 'ms', 'flagi:', wu.flags);
@@ -737,13 +755,14 @@ function endGame(g, winnerIdx, reason, opts = {}) {
     const ws_ = wu.stats[diff], ls_ = lu.stats[diff];
     const wOld = ws_.elo, lOld = ls_.elo;
     ws_.elo = newElo(wOld, lOld, 1); ls_.elo = newElo(lOld, wOld, 0);
-    ws_.wins++; ls_.losses++;
+    ws_.wins++; ls_.losses++; ws_.sgames++; ls_.sgames++;
     ws_.streak++; ws_.bestStreak = Math.max(ws_.bestStreak, ws_.streak); ls_.streak = 0;
     if (reason === 'solved') {                               // czasy liczymy tylko z rozwiązanych plansz
       ws_.solved++; ws_.sumMs += ms;
       if (!ws_.bestMs || ms < ws_.bestMs) ws_.bestMs = ms;
     }
     wDelta = ws_.elo - wOld; lDelta = ls_.elo - lOld;
+    wRank = { from: rankIndex(wOld), to: rankIndex(ws_.elo) }; lRank = { from: rankIndex(lOld), to: rankIndex(ls_.elo) };
     pushElo(wu, diff, ws_.elo, at); pushElo(lu, diff, ls_.elo, at);
   }
   const eloAfter = u => (g.ranked && !voided) ? u.stats[diff].elo : null;
@@ -752,8 +771,8 @@ function endGame(g, winnerIdx, reason, opts = {}) {
   saveU(wu); saveU(lu);
 
   const base = { type: 'result', reason, ms, diff, ranked: g.ranked, friend: g.friend, void: voided };
-  deliver(w, { ...base, won: true, delta: wDelta, user: pub(wu) });
-  deliver(l, { ...base, won: false, delta: lDelta, user: pub(lu) });
+  deliver(w, { ...base, won: true, delta: wDelta, rank: wRank, user: pub(wu) });
+  deliver(l, { ...base, won: false, delta: lDelta, rank: lRank, user: pub(lu) });
   w.last = { oppId: lu.id, oppIp: l.ip, diff, ranked: g.ranked, friend: g.friend, at, ms };   // rewanż i zgłoszenie
   l.last = { oppId: wu.id, oppIp: w.ip, diff, ranked: g.ranked, friend: g.friend, at, ms };
   for (const p of [w, l]) {
@@ -808,7 +827,7 @@ app.post('/api/profile', (req, res) => {
     stats[d] = { elo: s.elo, wins: s.wins, losses: s.losses, streak: s.streak, bestStreak: s.bestStreak,
                  bestMs: s.bestMs || null, avgMs: s.solved ? Math.round(s.sumMs / s.solved) : null };
   }
-  res.json({ name: u.name, stats, history: u.history.slice(-50).reverse(), eloLog: u.eloLog });
+  res.json({ name: u.name, stats, history: u.history.slice(-50).reverse(), eloLog: u.eloLog, badges: u.badges.slice().reverse() });
 });
 
 // ---------- panel admina ----------
@@ -918,23 +937,71 @@ setInterval(() => {
   }
 }, 3600e3).unref();
 
+// ================= SEZONY =================
+let meta = { id: 'meta', season: '', history: [] };          // bieżący sezon + wyniki poprzednich (ostatnie 12)
+function seasonId(d = new Date()) { return d.toLocaleString('sv-SE', { timeZone: 'Europe/Warsaw' }).slice(0, 7); }    // np. "2026-11"
+function seasonEnd(id) {                                      // początek następnego miesiąca w Polsce (ms)
+  if (!/^\d{4}-\d{2}$/.test(id || '')) return null;
+  const [y, m] = id.split('-').map(Number), guess = Date.UTC(y, m, 1);
+  const off = Date.parse(new Date(guess).toLocaleString('sv-SE', { timeZone: 'Europe/Warsaw' }).replace(' ', 'T') + 'Z') - guess;
+  return guess - off;
+}
+function rollSeason(newId) {
+  const old = meta.season, now = Date.now();
+  if (old) {                                                  // odznaki dla TOP 3 każdego poziomu (min. SEASON_MIN_GAMES meczów)
+    const results = {};
+    for (const d of Object.keys(DIFFS)) {
+      const top = [...users.values()]
+        .filter(u => !isGuest(u) && u.stats[d].sgames >= SEASON_MIN_GAMES && u.flags < FLAGS_HIDE && !userBanned(u.id))
+        .sort((a, b) => b.stats[d].elo - a.stats[d].elo).slice(0, 3);
+      results[d] = top.map((u, k) => ({ place: k + 1, name: u.name, elo: u.stats[d].elo }));
+      top.forEach((u, k) => u.badges.push({ season: old, diff: d, place: k + 1, elo: u.stats[d].elo }));
+    }
+    meta.history.push({ season: old, results });
+    meta.history = meta.history.slice(-12);
+  }
+  for (const u of users.values()) {                           // miękki reset: Elo zbliża się do 1000
+    if (isGuest(u)) continue;
+    for (const d of Object.keys(DIFFS)) {
+      const s = u.stats[d];
+      if (s.wins + s.losses > 0) { s.elo = Math.round(1000 + (s.elo - 1000) * SEASON_KEEP); pushElo(u, d, s.elo, now); }
+      s.sgames = 0;
+    }
+    saveU(u);
+  }
+  meta.season = newId;
+  store.save('meta', meta);
+  for (const p of players.values()) if (p.ws) {               // odśwież ekrany graczy online
+    sendP(p, { type: 'me', user: pub(p.user) });
+    notice(p, 'Nowy sezon ' + newId + '! Elo zostało zresetowane.');
+  }
+  console.log('Nowy sezon:', newId, '(poprzedni:', old || 'brak', ')');
+}
+setInterval(() => { const id = seasonId(); if (meta.season && id !== meta.season) rollSeason(id); }, 60e3).unref();
+
 // ================= START =================
 async function main() {
   const data = await store.load();
   const loaded = data.users;
+  if (data.meta && data.meta[0]) meta = data.meta[0];
+  const firstRun = !meta.season;                    // pierwszy start po dodaniu sezonów
   for (const r of data.reports) reports.set(r.id, r);
   for (const b of data.bans) indexBan(b);
   loaded.sort((a, b) => (isGuest(a) ? 1 : 0) - (isGuest(b) ? 1 : 0));       // najpierw konta, potem goście
   for (const u of loaded) {
     ensureUser(u);
     let changed = false;
+    if (firstRun) for (const d of Object.keys(DIFFS)) { const st = u.stats[d]; if (!st.sgames && st.wins + st.losses) { st.sgames = st.wins + st.losses; changed = true; } }   // dotychczasowe mecze liczą się do bieżącego sezonu
     if (isGuest(u) && (!/^Guest\d+$/.test(u.name) || nameIndex.has(u.name.toLowerCase()))) { u.name = guestName(); changed = true; }
     users.set(u.id, u); indexUser(u);
     if (changed) saveU(u);
   }
+  const cur = seasonId();
+  if (firstRun) { meta.season = cur; store.save('meta', meta); }
+  else if (meta.season !== cur) rollSeason(cur);
   console.log(`Baza: ${store.kind}, użytkowników: ${users.size}, zgłoszeń: ${reports.size}, blokad: ${banById.size}`);
   server.listen(PORT, () => console.log('Sudoku Duel działa na porcie ' + PORT));
 }
 if (require.main === module || process.env.SUDOKU_TEST) main().catch(e => { console.error(e); process.exit(1); });
 
-module.exports = { generatePuzzle, countSolutions, DIFFS };
+module.exports = { generatePuzzle, countSolutions, DIFFS, rollSeason, seasonId, _users: users };

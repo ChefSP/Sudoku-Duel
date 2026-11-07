@@ -35,6 +35,10 @@ button:active:not(:disabled){transform:scale(.98)}
 .row{display:flex;gap:10px}
 .row button{font-size:15px}
 .stats{display:flex;gap:10px;margin-top:12px}
+.rankbox{margin-top:10px;font-size:14px}
+.rankbox .bar{height:6px;border-radius:99px;background:var(--panel2);margin-top:6px;overflow:hidden}
+.rankbox .bar i{display:block;height:100%;background:var(--green);border-radius:99px}
+.bdg{display:inline-block;margin-right:2px}
 .stat{flex:1;background:var(--panel2);border-radius:8px;padding:10px;text-align:center}
 .stat b{display:block;font-size:22px}
 .stat small{color:var(--muted)}
@@ -175,6 +179,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
         <div class="stat"><b id="wins">0</b><small>Wygrane</small></div>
         <div class="stat"><b id="losses">0</b><small>Przegrane</small></div>
       </div>
+      <div class="rankbox hidden" id="rankInfo"></div>
       <button id="play">⚔ Szukaj przeciwnika</button>
       <div class="row">
         <button class="sec" id="soloBtn">🧩 Solo</button>
@@ -183,7 +188,9 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     </div>
     <div class="card">
       <b>🏆 Ranking TOP 20 <span id="lbDiff" style="color:var(--muted);font-weight:400"></span></b>
+      <div class="info" id="seasonInfo" style="margin:6px 0"></div>
       <table id="lb"><tr><td class="sub">Ładowanie…</td></tr></table>
+      <div class="info" id="prevSeason" style="margin-top:8px"></div>
     </div>
     <div class="card" style="color:var(--muted);font-size:14px">
       Sterowanie: cyfry z klawiatury lub paska pod planszą, strzałki przesuwają zaznaczenie. <b>Notatki:</b> kliknij dwa razy szybko puste pole (albo przycisk ✎ / klawisz N), potem wpisuj cyfry – pojawią się jako małe notatki w polu. Odświeżenie strony w trakcie meczu nie kończy gry – masz 30 sekund na powrót.
@@ -239,6 +246,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <div class="card" style="margin-top:14px"><b>Wykres Elo</b><div id="chart"></div></div>
     <div class="card"><b>Historia meczów</b> <span class="sub" style="font-size:12px">(ostatnie 50)</span>
       <div style="overflow-x:auto;margin-top:6px"><table id="hist"></table></div></div>
+    <div class="card hidden" id="pBadgesCard"><b>🏅 Odznaki sezonowe</b><div id="pBadges" style="margin-top:8px;font-size:14px"></div></div>
     <button class="sec" id="pBack">← Wróć do menu</button>
   </div>
 
@@ -368,6 +376,17 @@ const DIFFS = {
   hard:     { label: 'Trudny',   lock: 10 },
   hardcore: { label: 'Hardcore', lock: 0, blind: true }
 };
+let RANKS = [{min:0,name:'Brąz',icon:'🥉'},{min:1100,name:'Srebro',icon:'🥈'},{min:1250,name:'Złoto',icon:'🥇'},{min:1400,name:'Diament',icon:'💎'}];
+const rankIdx = elo => { let k = 0; RANKS.forEach((r, i) => { if (elo >= r.min) k = i; }); return k; };
+const rankOf = elo => RANKS[rankIdx(elo)];
+const MEDAL = ['🥇','🥈','🥉'];
+function renderRankInfo(s){
+  const el = $('rankInfo'), i = rankIdx(s.elo), r = RANKS[i], nx = RANKS[i + 1];
+  const base = i === 0 ? 900 : r.min;
+  el.innerHTML = '<b>' + r.icon + ' ' + r.name + '</b>' + (nx
+    ? ' <span style="color:var(--muted)">· do ' + nx.icon + ' ' + nx.name + ': ' + Math.max(0, nx.min - s.elo) + ' Elo</span><div class="bar"><i style="width:' + Math.max(0, Math.min(100, 100 * (s.elo - base) / (nx.min - base))) + '%"></i></div>'
+    : ' <span style="color:var(--muted)">· najwyższa ranga!</span><div class="bar"><i style="width:100%"></i></div>');
+}
 let ws, me = null, cfg = {}, G = null, sel = -1, lockUntil = 0, timerInt = null, reconnectT = null, oppT = null, toastT = null;
 let curDiff = store.get('diff'); if (!DIFFS[curDiff]) curDiff = 'medium';
 let kind = store.get('kind') === 'ranked' ? 'ranked' : 'casual';
@@ -477,6 +496,7 @@ function renderMode(){
   $('statsBox').classList.toggle('hidden', guest || kind !== 'ranked');
   const s = me && me.stats[curDiff] ? me.stats[curDiff] : { elo: 1000, wins: 0, losses: 0 };
   $('elo').textContent = s.elo; $('wins').textContent = s.wins; $('losses').textContent = s.losses;
+  $('rankInfo').classList.toggle('hidden', guest || kind !== 'ranked'); if (!guest) renderRankInfo(s);
   $('lbDiff').textContent = '· ' + D.label;
 }
 $('kRanked').onclick = () => { kind = 'ranked'; store.set('kind', kind); renderMode(); };
@@ -485,10 +505,21 @@ $('kCasual').onclick = () => { kind = 'casual'; store.set('kind', kind); renderM
 async function loadLb(){
   try {
     const d = await (await fetch('/api/leaderboard?diff=' + curDiff)).json();
+    const bd = b => b ? b.map((n, k) => n ? '<span class="bdg">' + MEDAL[k] + (n > 1 ? '×' + n : '') + '</span>' : '').join('') : '';
     $('lb').innerHTML = d.length
       ? '<tr><th>#</th><th>Gracz</th><th>Elo</th><th>W/L</th></tr>' + d.map((u,i) =>
-          `<tr><td>${i+1}</td><td>${esc(u.name)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
-      : '<tr><td class="sub">Nikt jeszcze nie zagrał tu rankingowo. Bądź pierwszy!</td></tr>';
+          `<tr><td>${i+1}</td><td>${rankOf(u.elo).icon} ${esc(u.name)} ${bd(u.badges)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
+      : '<tr><td class="sub">Nikt jeszcze nie zagrał w tym sezonie rankingowo. Bądź pierwszy!</td></tr>';
+  } catch {}
+  loadSeason();
+}
+async function loadSeason(){
+  try {
+    const d = await (await fetch('/api/season')).json();
+    const left = d.endsAt ? Math.max(0, d.endsAt - Date.now()) : 0, days = Math.floor(left / 864e5), hrs = Math.floor(left % 864e5 / 36e5);
+    $('seasonInfo').textContent = 'Sezon ' + d.id + ' · do końca: ' + (days ? days + ' d ' : '') + hrs + ' h · na koniec sezonu Elo wraca ' + (d.keep >= 1 ? 'bez zmian' : d.keep <= 0 ? 'do 1000' : 'w stronę 1000 (zostaje ' + Math.round(d.keep * 100) + '% różnicy)') + ' · TOP 3 dostaje odznakę (min. ' + d.minGames + ' meczów)';
+    const pr = d.prev && d.prev.results && d.prev.results[curDiff];
+    $('prevSeason').textContent = pr && pr.length ? 'Poprzedni sezon (' + d.prev.season + '): ' + pr.map(x => MEDAL[x.place - 1] + ' ' + x.name + ' (' + x.elo + ')').join(' · ') : '';
   } catch {}
 }
 
@@ -628,7 +659,7 @@ function startMatch(m){
   sel = -1; lockUntil = Date.now() + (m.lockMs || 0);
   const mode = m.friend ? 'ze znajomym' : m.ranked ? 'rankingowa' : 'towarzyska';
   $('oppName').textContent = m.opp.name;
-  $('oppElo').textContent = DIFFS[m.diff].label + ' · ' + mode + (m.opp.elo != null ? ' · Elo ' + m.opp.elo : '');
+  $('oppElo').textContent = DIFFS[m.diff].label + ' · ' + mode + (m.opp.elo != null ? ' · ' + rankOf(m.opp.elo).icon + ' Elo ' + m.opp.elo : '');
   $('oppProg').classList.remove('hidden');
   $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); renderMini(); $('chatBtn').classList.remove('hidden');
   $('oppBar').style.width = (m.oppFilled / m.empties * 100) + '%';
@@ -815,6 +846,10 @@ function endMatch(m){
     $('resElo').textContent = me.stats[m.diff].elo;
     $('resDelta').textContent = (m.delta >= 0 ? '+' : '') + m.delta + ' Elo';
     $('resDelta').className = m.delta > 0 ? 'win' : m.delta < 0 ? 'lose' : 'neutral';
+    if (m.rank && m.rank.to !== m.rank.from){
+      const up = m.rank.to > m.rank.from, r = RANKS[m.rank.to];
+      $('resDelta').textContent += up ? ' · ⬆ Awans: ' + r.icon + ' ' + r.name + '!' : ' · ⬇ Spadek: ' + r.icon + ' ' + r.name;
+    }
   } else {
     $('resElo').textContent = fmt(m.ms);
     $('resDelta').textContent = (m.friend ? 'Pojedynek ze znajomym' : 'Gra towarzyska') + ' – ranking bez zmian';
@@ -891,11 +926,14 @@ function renderProfile(){
   }
   const s = prof.stats[pDiff], games = s.wins + s.losses;
   const tile = (v, l) => '<div class="stat"><b>' + v + '</b><small>' + l + '</small></div>';
-  $('pStats').innerHTML = tile(s.elo, 'Elo') + tile(s.wins + ' / ' + s.losses, 'Wygrane / przegrane')
+  $('pStats').innerHTML = tile(rankOf(s.elo).icon + ' ' + s.elo, 'Elo · ' + rankOf(s.elo).name) + tile(s.wins + ' / ' + s.losses, 'Wygrane / przegrane')
     + tile(games ? Math.round(100 * s.wins / games) + '%' : '–', 'Skuteczność')
     + tile(fmtMs(s.avgMs), 'Średni czas') + tile(fmtMs(s.bestMs), 'Najlepszy czas')
     + tile(s.streak + ' <small>(rekord ' + s.bestStreak + ')</small>', 'Passa wygranych');
   drawChart(prof.eloLog[pDiff]);
+  const bl = prof.badges || [];
+  $('pBadgesCard').classList.toggle('hidden', !bl.length);
+  $('pBadges').innerHTML = bl.map(b => MEDAL[b.place - 1] + ' ' + (DIFFS[b.diff] ? DIFFS[b.diff].label : b.diff) + ' · sezon ' + b.season + ' · ' + b.elo + ' Elo').join('<br>');
   const rows = prof.history.map(h => {
     const when = new Date(h.t).toLocaleString('pl-PL', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     const res = h.void ? '<span class="v">unieważn.</span>' : h.won ? '<span class="w">W</span>' : '<span class="l">P</span>';
@@ -1042,7 +1080,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol))
 // ---------- start ----------
 renderMode();
 fetch('/api/config').then(r => r.json()).then(c => {
-  cfg = c;
+  cfg = c; if (Array.isArray(c.ranks) && c.ranks.length) { RANKS = c.ranks; renderMode(); }
   if (c.googleClientId) loadScript('https://accounts.google.com/gsi/client', () => { googleReady = true; });
   if (c.turnstileSiteKey) loadScript('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', () => {});
 }).catch(() => {});
