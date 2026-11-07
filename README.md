@@ -2,76 +2,61 @@
 
 Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni całą planszę.
 
-- ranking Elo osobno dla poziomów: Łatwy / Średni / Trudny,
-- konta: nick + hasło albo logowanie Google (gość może założyć konto i zachować ranking),
-- trwała baza Postgres (Neon / Supabase); bez bazy działa na pliku `data.json` (tylko do testów),
-- powrót do meczu po odświeżeniu strony lub zerwaniu połączenia (30 s),
-- blokada 4 s po błędnej cyfrze,
-- ochrona przed botami: captcha przy rejestracji, limity (IP, wiadomości, logowania), minimalny odstęp między ruchami, unieważnianie nierealnie szybkich wygranych.
+## Funkcje
+
+- **Poziomy:** Łatwy (blokada 2 s po błędzie), Średni (4 s), Trudny (10 s) oraz **Hardcore** (plansza z trudnego, bez blokady i bez sprawdzania cyfr: błąd zostaje na planszy, wygrywa pierwszy z całą poprawną planszą).
+- **Gra rankingowa** (tylko konta, Elo osobno na każdym poziomie) i **towarzyska** (każdy, bez rankingu).
+- **Goście:** nick `Guest1234`, bez rankingu i bez historii. Nicki są unikalne, a `Guest…` jest zarezerwowany dla gości.
+- **Solo**, **notatki w komórkach** (podwójne kliknięcie pustego pola, przycisk ✎ albo klawisz N), **rewanż** jednym kliknięciem, **pojedynek ze znajomym przez link** (bez rankingu).
+- **Statystyki** (średni i najlepszy czas, passa wygranych, skuteczność), **wykres Elo** i **historia meczów** (ostatnie 50): ekran "Moje statystyki" w menu po zalogowaniu.
+- **Zgłaszanie graczy** (🚩 w trakcie meczu i na ekranie wyniku), **panel admina z banami** (konto albo IP).
+- Konta: nick + hasło albo Google, trwała baza Postgres, powrót do meczu po odświeżeniu strony (30 s), ochrona przed botami.
+
+Statystyki, passa i wykres liczą **tylko mecze rankingowe**. Czasy: tylko z rozwiązanych plansz (nie z poddania ani rozłączenia). Historia zawiera wszystkie mecze konta (też towarzyskie i ze znajomym, z oznaczeniem trybu).
 
 ## Pliki
 
 ```
-package.json       # zależności: express, ws, pg
-server.js          # serwer: gra, matchmaking, Elo, konta, baza, anty-boty
-public/index.html  # cała strona
+package.json
+server.js            # gra, matchmaking, Elo, konta, baza, statystyki, zgłoszenia, bany
+public/index.html    # gra
+public/admin.html    # panel admina (/admin.html)
 ```
+
+## Zmienne środowiskowe (Render → Environment)
+
+| Zmienna | Po co | Wymagana? |
+|---|---|---|
+| `DATABASE_URL` | adres Postgres (Neon), żeby dane przetrwały restarty | tak (na serio) |
+| `ADMIN_PASSWORD` | hasło do panelu `/admin.html`. Bez niego panel jest wyłączony | zalecane |
+| `GOOGLE_CLIENT_ID` | przycisk "Zaloguj przez Google" | nie |
+| `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` | captcha przy zakładaniu konta | nie (zalecane) |
+
+Tabele (`users`, `reports`, `bans`) tworzą się same. Konfiguracja Neon, Google i Turnstile: bez zmian względem poprzedniej wersji (Neon: neon.tech → Connect → connection string → `DATABASE_URL`).
+
+## Panel admina
+
+1. W Render dodaj `ADMIN_PASSWORD` (długie, losowe hasło) i poczekaj na restart.
+2. Wejdź na `https://twoja-gra.onrender.com/admin.html` i wpisz to hasło.
+3. Widzisz zgłoszenia pogrupowane po graczu (liczba zgłoszeń, powody, opisy, IP, ile meczów unieważnił system anty-botowy). Do wyboru:
+   - **Zablokuj konto**: gracz jest od razu rozłączony, nie zaloguje się, znika z rankingu. Mecz, który właśnie grał, zostaje unieważniony dla przeciwnika.
+   - **Zablokuj IP (7 dni)**: dla gości i osób, które zakładają nowe konta. Uwaga: pod jednym IP może siedzieć wiele osób (szkoła, sieć komórkowa), więc używaj oszczędnie.
+   - **Odrzuć zgłoszenia**.
+4. Sekcja "Sprawdź gracza" pokazuje dane po nicku i pozwala zablokować go ręcznie. Lista blokad ma przycisk **Odblokuj**.
+
+Zgłoszenia starsze niż 60 dni (odrzucone: 7 dni) i wygasłe blokady IP kasują się same. Adresy IP są przechowywane tylko w zgłoszeniach i blokadach.
 
 ## Uruchomienie lokalnie
 
 ```bash
 npm install
-npm start      # http://localhost:3000 (otwórz w dwóch kartach/oknach prywatnych)
+npm start      # http://localhost:3000
 ```
-
-## Zmienne środowiskowe (w Render: Environment)
-
-| Zmienna | Po co | Wymagana? |
-|---|---|---|
-| `DATABASE_URL` | adres bazy Postgres, żeby konta i ranking przetrwały restarty | tak (na serio), nie na testy |
-| `GOOGLE_CLIENT_ID` | włącza przycisk "Zaloguj przez Google" | nie |
-| `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` | włącza captchę przy zakładaniu konta | nie (zalecane) |
-
-Bez zmiennej dana funkcja jest po prostu wyłączona. Tabela w bazie tworzy się sama.
-
-## 1. Baza danych: Neon (darmowa)
-
-1. Wejdź na https://neon.tech, załóż konto (np. przez GitHub).
-2. Utwórz projekt (Create project), region np. Frankfurt.
-3. Na stronie projektu kliknij **Connect** i skopiuj **connection string** (zaczyna się od `postgresql://`).
-4. W Render: Twój serwis → **Environment** → Add Environment Variable: `DATABASE_URL` = skopiowany adres → Save.
-
-Po restarcie w logach zobaczysz: `Baza: Postgres, użytkowników: 0`.
-
-## 2. Logowanie przez Google (opcjonalnie)
-
-1. https://console.cloud.google.com → utwórz projekt.
-2. **APIs & Services → OAuth consent screen**: typ External, wpisz nazwę aplikacji i swój e-mail. Na końcu kliknij **Publish app**, inaczej zalogują się tylko dodani testerzy.
-3. **Credentials → Create credentials → OAuth client ID** → Web application.
-4. W **Authorized JavaScript origins** dodaj adres swojej gry, np. `https://sudoku-duel-xxxx.onrender.com` (oraz `http://localhost:3000` do testów).
-5. Skopiuj **Client ID** i wpisz w Render jako `GOOGLE_CLIENT_ID`.
-
-## 3. Captcha przy rejestracji (opcjonalnie)
-
-1. https://dash.cloudflare.com → **Turnstile** → Add widget.
-2. Domena: adres Twojej gry (bez https://), np. `sudoku-duel-xxxx.onrender.com`. Tryb: Managed.
-3. Skopiuj **Site Key** → `TURNSTILE_SITE_KEY` oraz **Secret Key** → `TURNSTILE_SECRET` w Render.
-
-## Wdrożenie (Render)
-
-Bez zmian: repo na GitHubie, Web Service, Build `npm install`, Start `npm start`.
-Po wgraniu nowych plików na GitHub Render sam zrobi deploy. Zmienne środowiskowe dodajesz w zakładce Environment.
 
 ## Ustawienia w `server.js` (góra pliku)
 
-- `DIFFS`: liczba usuniętych pól na poziom (38 / 48 / 55),
-- `WRONG_LOCK_MS`: blokada po błędzie (4000),
-- `GRACE_MS`: czas na powrót do meczu (30000),
-- `MIN_MOVE_MS`, `MIN_MS_PER_CELL`, `FLAGS_HIDE`: progi anty-botowe.
+`DIFFS` (liczba pustych pól i długość blokady), `GRACE_MS` (czas na powrót do meczu), `HISTORY_MAX` i `ELO_LOG_MAX` (ile historii pamiętamy), progi anty-botowe `MIN_MOVE_MS`, `MIN_MS_PER_CELL`, `FLAGS_HIDE`.
 
 ## Ograniczenia anty-botowe (uczciwie)
 
-Serwer sam sprawdza każdą cyfrę, więc nie da się oszukać planszy, ale bot z solverem może grać "po ludzku wolno".
-Obecne zabezpieczenia odsiewają proste boty: ruchy szybsze niż 120 ms są ignorowane, wygrana szybsza niż 0,4 s na pole jest unieważniana (bez zmiany Elo), a konto z 3 unieważnieniami znika z rankingu.
-Limity po IP są "best effort": za proxy Render adres IP jest brany z nagłówka `X-Forwarded-For`.
-Gdyby pojawiło się dużo botów, kolejne kroki to obowiązkowe konto do gry rankingowej i wykrywanie wzorców czasowych.
+Serwer sam sprawdza każdą cyfrę, ale bot z solverem może grać "po ludzku wolno". Odsiewamy proste boty: ruchy częstsze niż co 120 ms są ignorowane, wygrana szybsza niż 0,4 s na pole jest unieważniana (bez zmiany Elo), a konto z 3 unieważnieniami znika z rankingu. Resztą zajmują się zgłoszenia graczy i panel admina. Limity po IP są "best effort" (adres IP jest brany z nagłówka `X-Forwarded-For`).

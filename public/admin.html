@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Sudoku Duel – panel admina</title>
+<style>
+:root{--bg:#161512;--panel:#262421;--panel2:#312e2b;--text:#e8e6e3;--muted:#989795;--green:#81b64c;--red:#e5534b;--line:#4a4743;--gold:#f0b429}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:760px;padding:16px}
+h1{margin:8px 0 14px;font-size:26px}h1 span{color:var(--red)}
+h2{font-size:17px;margin:22px 0 8px}
+.card{background:var(--panel);border-radius:12px;padding:14px;margin-bottom:12px}
+input{width:100%;padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:15px}
+button{cursor:pointer;border:0;border-radius:8px;font-size:14px;font-weight:700;padding:9px 12px;background:var(--green);color:#fff}
+button.sec{background:var(--panel2);color:var(--text)}button.red{background:var(--red)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.muted{color:var(--muted);font-size:13px}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;background:var(--panel2);font-size:12px;margin-right:4px}
+.tag.red{background:#5b2623}.tag.gold{background:#5a4510;color:var(--gold)}
+.rep{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
+.hidden{display:none!important}
+.err{color:var(--red);min-height:18px;margin-top:8px;font-size:14px}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;text-align:left;font-size:14px}th{color:var(--muted);font-weight:500}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Sudoku Duel <span>admin</span></h1>
+
+  <div id="login" class="card">
+    <b>Klucz admina</b>
+    <p class="muted">To wartość zmiennej <code>ADMIN_PASSWORD</code> ustawionej na serwerze.</p>
+    <input type="password" id="key" placeholder="Klucz" autocomplete="current-password">
+    <div class="err" id="lerr"></div>
+    <div class="row"><button id="go">Zaloguj</button></div>
+  </div>
+
+  <div id="panel" class="hidden">
+    <div class="row" style="margin:0 0 6px;justify-content:space-between;align-items:center">
+      <span class="muted" id="status"></span>
+      <span><button class="sec" id="refresh">Odśwież</button> <button class="sec" id="logout">Wyloguj</button></span>
+    </div>
+
+    <h2>🚩 Otwarte zgłoszenia</h2>
+    <div id="reports"></div>
+
+    <h2>🔎 Sprawdź gracza</h2>
+    <div class="card">
+      <input type="text" id="qname" placeholder="Nick gracza">
+      <div class="row"><button class="sec" id="qgo">Szukaj</button></div>
+      <div id="qres" class="muted" style="margin-top:10px"></div>
+    </div>
+
+    <h2>🚫 Aktywne blokady</h2>
+    <div class="card"><table id="bans"></table></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+let key = ''; try { key = sessionStorage.getItem('akey') || ''; } catch {}
+const REASON = { cheat: '🤖 bot / oszustwo', abuse: '💬 obraźliwy nick', other: '❓ inne' };
+const MODE = { ranked: 'rankingowa', casual: 'towarzyska', friend: 'ze znajomym' };
+const fmtT = t => new Date(t).toLocaleString('pl-PL', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+const fmtMs = ms => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+let data = null;
+
+async function api(path, body){
+  const r = await fetch('/api/admin/' + path, {
+    method: body ? 'POST' : 'GET',
+    headers: Object.assign({ 'x-admin-key': key }, body ? { 'content-type': 'application/json' } : {}),
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(d.error || 'Błąd ' + r.status);
+  return d;
+}
+async function load(){
+  try { data = await api('overview'); } catch (e) {
+    $('panel').classList.add('hidden'); $('login').classList.remove('hidden'); $('lerr').textContent = e.message; return false;
+  }
+  $('login').classList.add('hidden'); $('panel').classList.remove('hidden'); render(); return true;
+}
+function render(){
+  $('status').textContent = 'Zgłoszeń do przejrzenia: ' + data.reports.length + ' · blokad: ' + data.bans.length;
+  $('reports').innerHTML = data.reports.length ? '' : '<div class="card muted">Brak otwartych zgłoszeń. 🎉</div>';
+  data.reports.forEach((g, gi) => {
+    const el = document.createElement('div'); el.className = 'card';
+    const reasons = Object.entries(g.reasons).map(([k, n]) => '<span class="tag red">' + (REASON[k] || k) + ' ×' + n + '</span>').join('');
+    el.innerHTML = '<b>' + esc(g.name) + '</b> ' + (g.guest ? '<span class="tag">gość</span>' : '') + (g.banned ? '<span class="tag red">zablokowany</span>' : '')
+      + (g.flags ? '<span class="tag gold">unieważnione mecze: ' + g.flags + '</span>' : '')
+      + '<div class="muted" style="margin:6px 0">Zgłoszeń: <b>' + g.count + '</b> · ostatnie: ' + fmtT(g.lastAt) + (g.ip ? ' · IP: ' + esc(g.ip) : '') + '</div>' + reasons
+      + g.reports.map(r => '<div class="rep">' + (REASON[r.reason] || r.reason) + ' · od <b>' + esc(r.reporter) + '</b>' + (r.reporterGuest ? ' (gość)' : '')
+        + ' · ' + fmtT(r.at) + (r.match ? '<div class="muted">mecz: ' + (MODE[r.match.mode] || '') + ', ' + esc(r.match.diff) + (r.match.ms ? ', ' + fmtMs(r.match.ms) : '') + (r.match.live ? ' (w trakcie)' : '') + '</div>' : '')
+        + (r.note ? '<div>„' + esc(r.note) + '”</div>' : '') + '</div>').join('')
+      + '<div class="row"></div>';
+    const row = el.querySelector('.row');
+    const mk = (txt, cls, fn) => { const b = document.createElement('button'); b.textContent = txt; if (cls) b.className = cls; b.onclick = fn; row.appendChild(b); };
+    if (!g.banned) mk('🚫 Zablokuj konto', 'red', () => ban({ type:'user', userId: g.targetId }, g.name));
+    if (g.ip) mk('🌐 Zablokuj IP (7 dni)', 'red', () => ban({ type:'ip', ip: g.ip, days: 7 }, g.ip));
+    mk('Odrzuć zgłoszenia', 'sec', () => act('dismiss', { targetId: g.targetId }));
+    $('reports').appendChild(el);
+  });
+  $('bans').innerHTML = data.bans.length
+    ? '<tr><th>Co</th><th>Powód</th><th>Od</th><th>Do</th><th></th></tr>' + data.bans.map(b =>
+        '<tr><td>' + (b.type === 'ip' ? '🌐 ' : '👤 ') + esc(b.name) + '</td><td>' + esc(b.reason) + '</td><td>' + fmtT(b.at) + '</td><td>' + (b.until ? fmtT(b.until) : 'bezterminowo')
+        + '</td><td><button class="sec" data-id="' + esc(b.id) + '">Odblokuj</button></td></tr>').join('')
+    : '<tr><td class="muted">Brak blokad.</td></tr>';
+  $('bans').querySelectorAll('button[data-id]').forEach(b => b.onclick = () => { if (confirm('Odblokować?')) act('unban', { id: b.dataset.id }); });
+}
+async function act(path, body){
+  try { data = await api(path, body); render(); } catch (e) { alert(e.message); }
+}
+function ban(body, label){
+  const reason = prompt('Powód blokady „' + label + '” (widoczny dla gracza przy logowaniu):', body.type === 'ip' ? 'Naruszenie regulaminu' : 'Oszustwo / naruszenie regulaminu');
+  if (reason === null) return;
+  act('ban', Object.assign({ reason }, body));
+}
+
+$('go').onclick = async () => {
+  key = $('key').value; try { sessionStorage.setItem('akey', key); } catch {}
+  $('lerr').textContent = ''; await load();
+};
+$('key').onkeydown = e => { if (e.key === 'Enter') $('go').click(); };
+$('refresh').onclick = load;
+$('logout').onclick = () => { key = ''; try { sessionStorage.removeItem('akey'); } catch {} $('panel').classList.add('hidden'); $('login').classList.remove('hidden'); };
+$('qgo').onclick = async () => {
+  const name = $('qname').value.trim(); if (!name) return;
+  try {
+    const u = await api('user?name=' + encodeURIComponent(name));
+    $('qres').innerHTML = '<b style="color:var(--text)">' + esc(u.name) + '</b> ' + (u.guest ? '<span class="tag">gość</span>' : '') + (u.banned ? '<span class="tag red">zablokowany</span>' : '')
+      + '<div>Założone: ' + fmtT(u.createdAt) + ' · ostatnio: ' + fmtT(u.lastSeen) + ' · mecze rankingowe: ' + u.ranked + ' · unieważnione: ' + u.flags + '</div>'
+      + '<div>' + Object.entries(u.stats).map(([d, s]) => esc(d) + ': Elo ' + s.elo + ' (' + s.wins + '/' + s.losses + ')').join(' · ') + '</div>'
+      + (u.banned ? '' : '<div class="row"><button class="red" id="qban">🚫 Zablokuj konto</button></div>');
+    const b = $('qban'); if (b) b.onclick = () => ban({ type:'user', userId: u.id }, u.name);
+  } catch (e) { $('qres').textContent = e.message; }
+};
+if (key) load();
+</script>
+</body>
+</html>
