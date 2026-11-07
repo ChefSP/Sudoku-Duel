@@ -39,6 +39,15 @@ button:active:not(:disabled){transform:scale(.98)}
 .rankbox .bar{height:6px;border-radius:99px;background:var(--panel2);margin-top:6px;overflow:hidden}
 .rankbox .bar i{display:block;height:100%;background:var(--green);border-radius:99px}
 .bdg{display:inline-block;margin-right:2px}
+.frow{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--panel2)}
+.frow:first-child{border-top:0}
+.frow .nm{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis}
+.frow button{width:auto;margin:0;font-size:14px;padding:8px 12px}
+.frow button.x{background:transparent;color:var(--muted);padding:8px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;margin-right:7px}
+.dot.on{background:var(--green)}.dot.busy{background:#e0a030}
+#chal{position:fixed;left:50%;top:12px;transform:translateX(-50%);width:min(92%,420px);background:var(--panel);border:2px solid var(--green);border-radius:14px;padding:14px;z-index:40;box-shadow:0 8px 30px #0006}
+#chal .row{margin-top:10px}#chal button{margin:0}
 .stat{flex:1;background:var(--panel2);border-radius:8px;padding:10px;text-align:center}
 .stat b{display:block;font-size:22px}
 .stat small{color:var(--muted)}
@@ -133,6 +142,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 </head>
 <body>
 <div id="banner" class="hidden"></div>
+<div id="chal" class="hidden"><b id="chalTxt"></b><div class="info" id="chalSub"></div><div class="row"><button id="chalYes">⚔ Przyjmij</button><button class="sec" id="chalNo">Odrzuć</button></div></div>
 <div id="toast" class="hidden"></div>
 <button id="gear" aria-label="Ustawienia">⚙</button>
 <div id="app">
@@ -148,6 +158,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
         <button class="sec" id="accBtn"></button>
       </div>
       <button class="sec small" id="profBtn">📊 Moje statystyki i historia meczów</button>
+      <button class="sec small" id="frBtn">👥 Znajomi</button>
     </div>
 
     <!-- logowanie / rejestracja -->
@@ -252,6 +263,17 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <button class="sec" id="dBack">← Wróć do menu</button>
   </div>
 
+  <div id="friends" class="hidden">
+    <h1>👥 Znajomi</h1>
+    <div class="card"><b>Dodaj znajomego</b>
+      <div class="row" style="margin-top:4px"><input type="text" id="fName" maxlength="20" placeholder="Nick gracza" autocomplete="off" style="flex:1"><button id="fAdd" style="width:auto;margin-top:8px;padding:12px 16px">Zaproś</button></div>
+    </div>
+    <div class="card hidden" id="fInCard"><b>🔔 Zaproszenia do Ciebie</b><div id="fIn"></div></div>
+    <div class="card"><b>Twoi znajomi</b><div class="info" id="fChalInfo"></div><div id="fList"></div></div>
+    <div class="card hidden" id="fOutCard"><b>Wysłane zaproszenia</b><div id="fOut"></div></div>
+    <button class="sec" id="fBack">← Wróć do menu</button>
+  </div>
+
   <div id="profile" class="hidden">
     <h1>Statystyki <span id="pName"></span></h1>
     <p class="sub">Liczą się mecze rankingowe. Czasy tylko z rozwiązanych plansz.</p>
@@ -326,7 +348,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
 <script>
 const $ = id => document.getElementById(id);
-const screens = ['menu','searching','game','result','profile','daily'];
+const screens = ['menu','searching','game','result','profile','daily','friends'];
 function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
@@ -447,6 +469,14 @@ function onMsg(m){
     $('roomBox').classList.add('hidden'); show('searching');
   }
   else if (m.type === 'room') showRoom(m);
+  else if (m.type === 'friends'){ fr = m; updateFrBtn(); if (!$('friends').classList.contains('hidden')) renderFriends(); }
+  else if (m.type === 'challengeSent'){
+    $('searchTitle').textContent = 'Czekam na odpowiedź…';
+    $('searchSub').textContent = 'Wyzwanie dla ' + m.name + ' · ' + DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : '') + ' · bez rankingu';
+    $('roomBox').classList.add('hidden'); show('searching');
+  }
+  else if (m.type === 'challenge') showChallenge(m);
+  else if (m.type === 'challengeGone'){ if (chalFrom === m.from) hideChal(); }
   else if (m.type === 'idle') show('menu');
   else if (m.type === 'match') startMatch(m);
   else if (m.type === 'ok'){
@@ -495,6 +525,7 @@ function renderMe(){
   $('accBtn').textContent = guest ? 'Zaloguj / Załóż konto' : 'Wyloguj';
   if (!guest) $('auth').classList.add('hidden');
   $('profBtn').classList.toggle('hidden', guest);
+  updateFrBtn();
   renderMode();
 }
 function renderMode(){
@@ -682,6 +713,7 @@ function confetti(){
 }
 
 function startMatch(m){
+  hideChal();
   animUntil.fill(0);
   const sig = m.puzzle.join('');
   const mode = m.mode || 'classic';
@@ -1023,6 +1055,55 @@ async function loadDailyBoard(){
 }
 $('dailyBtn').onclick = openDaily;
 $('dBack').onclick = () => { show('menu'); loadLb(); };
+
+// ---------- znajomi i wyzwania ----------
+let fr = { friends: [], incoming: [], outgoing: [] }, chalFrom = null, chalT = null;
+function updateFrBtn(){
+  const b = $('frBtn'), on = fr.friends.filter(f => f.online).length;
+  b.textContent = '👥 Znajomi' + (on ? ' · ' + on + ' online' : '') + (fr.incoming.length ? ' · 🔔 ' + fr.incoming.length : '');
+  b.classList.toggle('hidden', !me || me.guest);
+}
+function frRow(name, dot, btns){
+  const el = document.createElement('div'); el.className = 'frow';
+  el.innerHTML = (dot !== null ? '<span class="dot ' + dot + '"></span>' : '') + '<span class="nm">' + esc(name) + '</span>';
+  btns.forEach(([txt, cls, fn, dis]) => { const b = document.createElement('button'); b.textContent = txt; if (cls) b.className = cls; b.disabled = !!dis; b.onclick = fn; el.appendChild(b); });
+  return el;
+}
+function renderFriends(){
+  $('fChalInfo').textContent = 'Wyzwanie zagrasz na: ' + DIFFS[curDiff].label + (gmode !== 'classic' ? ' · ' + MODES[gmode].short : '') + ' (zmienisz w menu). Bez rankingu.';
+  const fill = (id, rows, cardId, empty) => {
+    const box = $(id); box.innerHTML = '';
+    rows.forEach(r => box.appendChild(r));
+    if (cardId) $(cardId).classList.toggle('hidden', !rows.length);
+    else if (!rows.length) box.innerHTML = '<div class="info">' + empty + '</div>';
+  };
+  fill('fIn', fr.incoming.map(n => frRow(n, null, [
+    ['Przyjmij', '', () => tx({ type:'faccept', name:n })], ['✕', 'x', () => tx({ type:'fdecline', name:n })]])), 'fInCard');
+  fill('fList', fr.friends.map(f => frRow(f.name, f.online ? (f.busy ? 'busy' : 'on') : '', [
+    [f.busy ? 'W grze' : 'Wyzwij', f.online && !f.busy ? '' : 'sec', () => tx({ type:'challenge', name:f.name, diff:curDiff, mode:gmode }), !f.online || f.busy],
+    ['✕', 'x', () => { if (confirm('Usunąć ' + f.name + ' ze znajomych?')) tx({ type:'fremove', name:f.name }); }]])), null, 'Jeszcze nikogo tu nie ma. Wpisz nick znajomego powyżej i wyślij zaproszenie.');
+  fill('fOut', fr.outgoing.map(n => frRow(n, null, [['Cofnij', 'sec', () => tx({ type:'fcancel', name:n })]])), 'fOutCard');
+}
+function openFriends(){ show('friends'); tx({ type:'friends' }); renderFriends(); }
+$('frBtn').onclick = openFriends;
+$('fBack').onclick = () => { show('menu'); loadLb(); };
+function sendFriendReq(){ const n = $('fName').value.trim(); if (!n) return; tx({ type:'fadd', name:n }); $('fName').value = ''; }
+$('fAdd').onclick = sendFriendReq;
+$('fName').onkeydown = e => { if (e.key === 'Enter') sendFriendReq(); };
+
+function hideChal(){ clearInterval(chalT); chalFrom = null; $('chal').classList.add('hidden'); }
+function showChallenge(m){
+  chalFrom = m.from; const end = Date.now() + (m.ttl || 60000);
+  $('chalTxt').textContent = '⚔ ' + m.from + ' wyzywa Cię!';
+  const upd = () => {
+    const left = Math.ceil((end - Date.now()) / 1000); if (left <= 0) return hideChal();
+    $('chalSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : ' · klasyczna') + ' · bez rankingu · jeszcze ' + left + ' s';
+  };
+  clearInterval(chalT); upd(); chalT = setInterval(upd, 500);
+  $('chal').classList.remove('hidden'); Snd('beep');
+}
+$('chalYes').onclick = () => { if (chalFrom) tx({ type:'caccept', from: chalFrom }); hideChal(); };
+$('chalNo').onclick = () => { if (chalFrom) tx({ type:'cdecline', from: chalFrom }); hideChal(); };
 
 // ---------- statystyki i historia ----------
 let prof = null, pDiff = null;

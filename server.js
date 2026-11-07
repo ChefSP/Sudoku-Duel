@@ -175,7 +175,7 @@ function newUser(name) {
   return {
     id: crypto.randomUUID(), name, pass: null, google: null, sessions: [],
     stats: Object.fromEntries(Object.keys(DIFFS).map(d => [d, newStats()])),
-    history: [], eloLog: {}, badges: [], daily: { date: '', runs: {}, done: {} },
+    history: [], eloLog: {}, badges: [], friends: [], fin: [], fout: [], daily: { date: '', runs: {}, done: {} },
     flags: 0, createdAt: now, lastSeen: now
   };
 }
@@ -302,6 +302,7 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   if (!Array.isArray(u.history)) u.history = [];
   if (!u.eloLog || typeof u.eloLog !== 'object') u.eloLog = {};
   if (!Array.isArray(u.badges)) u.badges = [];
+  for (const k of ['friends', 'fin', 'fout']) if (!Array.isArray(u[k])) u[k] = [];   // znajomi, zaproszenia do mnie, zaproszenia ode mnie
   if (!u.daily || typeof u.daily !== 'object') u.daily = { date: '', runs: {}, done: {} };
 }
 function pub(u) {
@@ -450,6 +451,7 @@ const wss = new WebSocketServer({ server, maxPayload: 4096 });
 
 // ================= GRA =================
 const players = new Map();                        // userId -> p
+const challenges = new Map();                     // id wyzywającego -> { to, diff, mode, at } (jedno wyzwanie naraz)
 const queues = { ranked: {}, casual: {}, blitz: {}, line: {}, sprint: {} };        // rankingowa (tylko konta) i towarzyska (każdy, bez Elo)
 for (const k of Object.keys(queues)) for (const d of Object.keys(DIFFS)) queues[k][d] = [];
 const rooms = new Map();                          // kod -> { hostId, diff, at }  (pojedynek ze znajomym)
@@ -467,7 +469,7 @@ function clearLast(p) {                           // rezygnacja z rewanżu
   const o = players.get(L.oppId);
   if (o && o.last && o.last.oppId === p.user.id) { o.rematchWant = false; sendP(o, { type: 'rematchGone' }); }
 }
-function leaveAll(p) { dequeue(p); closeRoom(p); clearLast(p); }
+function leaveAll(p) { dequeue(p); closeRoom(p); clearLast(p); cancelChallenge(p.user.id); }
 function onlineCount() { let n = 0; for (const p of players.values()) if (p.ws) n++; return n; }
 function broadcastOnline() {
   const n = onlineCount();
@@ -515,6 +517,15 @@ wss.on('connection', (ws, req) => {
     else if (m.type === 'leave') leaveAll(p);                       // wyjście z ekranu wyniku
     else if (m.type === 'move' && p.game) handleMove(p, m);
     else if (m.type === 'resign' && p.game) endGame(p.game, 1 - p.idx, 'resign');
+    else if (m.type === 'friends') sendP(p, friendsView(p.user));
+    else if (m.type === 'fadd') friendAdd(p, m);
+    else if (m.type === 'faccept') friendAccept(p, m);
+    else if (m.type === 'fdecline') friendDrop(p, m, 'decline');
+    else if (m.type === 'fcancel') friendDrop(p, m, 'cancel');
+    else if (m.type === 'fremove') friendDrop(p, m, 'remove');
+    else if (m.type === 'challenge') challengeSend(p, m);
+    else if (m.type === 'caccept') challengeAccept(p, m);
+    else if (m.type === 'cdecline') challengeDecline(p, m);
     else if (m.type === 'room') {                                    // zaproszenie znajomego
       if (p.game || !DIFFS[m.diff]) return;
       const mode = MODES.includes(m.mode) ? m.mode : 'classic';
@@ -556,7 +567,8 @@ wss.on('connection', (ws, req) => {
     const p = ws.p;
     if (!p || p.ws !== ws) return;          // to połączenie zostało już zastąpione nowym
     p.ws = null;
-    leaveAll(p);
+    leaveAll(p); dropChallengesTo(p.user.id);
+    setTimeout(() => pushFriendsOf(p.user), 50);
     const g = p.game;
     if (g && !g.over) {
       sendP(g.players[1 - p.idx], { type: 'oppstatus', online: false, graceMs: GRACE_MS });
@@ -596,6 +608,8 @@ function handleHello(ws, m) {
   clearTimeout(p.graceTimer);
 
   send(ws, { type: 'hello', token, user: pub(user) });
+  if (!isGuest(user)) send(ws, friendsView(user));
+  pushFriendsOf(user);
   broadcastOnline();
 
   const pend = pendingResults.get(user.id);
@@ -629,6 +643,7 @@ setInterval(() => {
       }
     }
   }
+  for (const [fid, ch] of challenges) if (Date.now() - ch.at > CHALLENGE_TTL_MS) cancelChallenge(fid, 'Wyzwanie wygasło.');
   const now = Date.now();                    // wygasanie zaproszeń
   for (const [code, r] of rooms) if (now - r.at > ROOM_TTL_MS) {
     rooms.delete(code);
@@ -648,6 +663,7 @@ function startGame(p0, p1, diff, opts = {}) {
   setupBoard(game);
   [p0, p1].forEach((p, i) => { p.game = game; p.idx = i; p.emoteCount = 0; });
   [p0, p1].forEach((p, i) => sendP(p, matchPayload(game, i)));
+  pushFriendsOf(p0.user); pushFriendsOf(p1.user);
 }
 
 const UNITS = [];                                          // 27 jednostek: 9 rzędów, 9 kolumn, 9 bloków 3x3
@@ -826,6 +842,7 @@ function endGame(g, winnerIdx, reason, opts = {}) {
     p.game = null; p.rematchWant = false;
     if (!p.ws) players.delete(p.user.id);
   }
+  pushFriendsOf(wu); pushFriendsOf(lu);
 }
 
 // ---------- zgłoszenia graczy ----------
@@ -1024,6 +1041,110 @@ function rollSeason(newId) {
   console.log('Nowy sezon:', newId, '(poprzedni:', old || 'brak', ')');
 }
 setInterval(() => { const id = seasonId(); if (meta.season && id !== meta.season) rollSeason(id); }, 60e3).unref();
+
+// ================= ZNAJOMI I WYZWANIA =================
+const FRIENDS_MAX = 50, REQUESTS_MAX = 20, CHALLENGE_TTL_MS = +process.env.CHALLENGE_TTL_MS || 60e3;
+const onlineP = id => { const q = players.get(id); return q && q.ws ? q : null; };
+const userByName = name => { const id = nameIndex.get(String(name || '').trim().toLowerCase().slice(0, 40)); return id ? users.get(id) : null; };
+function friendsView(u) {
+  const nm = id => { const f = users.get(id); return f && !userBanned(id) ? f.name : null; };
+  const friends = u.friends.map(id => {
+    const f = users.get(id); if (!f || userBanned(id)) return null;
+    const q = onlineP(id); return { name: f.name, online: !!q, busy: !!(q && q.game) };
+  }).filter(Boolean).sort((a, b) => (b.online - a.online) || a.name.localeCompare(b.name, 'pl'));
+  return { type: 'friends', friends, incoming: u.fin.map(nm).filter(Boolean), outgoing: u.fout.map(nm).filter(Boolean) };
+}
+function pushFriends(u) { const q = onlineP(u.id); if (q && !isGuest(u)) sendP(q, friendsView(u)); }
+function pushFriendsOf(u) { if (isGuest(u)) return; for (const id of u.friends) { const f = users.get(id); if (f) pushFriends(f); } }
+const without = (arr, id) => arr.filter(x => x !== id);
+
+function friendAdd(p, m) {
+  const me = p.user;
+  if (isGuest(me)) return notice(p, 'Znajomych mogą mieć tylko gracze z kontem. Załóż konto.');
+  if (limited('fadd:' + me.id, 20, 3600e3)) return notice(p, 'Za dużo zaproszeń, spróbuj później.');
+  const t = userByName(m.name);
+  if (!t || isGuest(t) || userBanned(t.id)) return notice(p, 'Nie ma gracza z takim nickiem (goście nie mają listy znajomych).');
+  if (t.id === me.id) return notice(p, 'To Ty. 🙂');
+  if (me.friends.includes(t.id)) return notice(p, t.name + ' jest już Twoim znajomym.');
+  if (me.fout.includes(t.id)) return notice(p, 'Zaproszenie dla ' + t.name + ' już czeka na odpowiedź.');
+  if (me.fin.includes(t.id)) return friendAccept(p, { name: t.name });           // on już zaprosił mnie: od razu znajomi
+  if (me.friends.length >= FRIENDS_MAX) return notice(p, 'Masz maksymalną liczbę znajomych (' + FRIENDS_MAX + ').');
+  if (me.fout.length >= REQUESTS_MAX || t.fin.length >= REQUESTS_MAX) return notice(p, 'Za dużo oczekujących zaproszeń.');
+  me.fout.push(t.id); t.fin.push(me.id); saveU(me); saveU(t);
+  notice(p, 'Wysłano zaproszenie do ' + t.name + '.');
+  const tp = onlineP(t.id); if (tp) notice(tp, '👥 ' + me.name + ' zaprasza Cię do znajomych (zakładka Znajomi).');
+  pushFriends(me); pushFriends(t);
+}
+function friendAccept(p, m) {
+  const me = p.user, t = userByName(m.name);
+  if (!t || !me.fin.includes(t.id)) return;
+  if (me.friends.length >= FRIENDS_MAX || t.friends.length >= FRIENDS_MAX) return notice(p, 'Lista znajomych jest pełna.');
+  me.fin = without(me.fin, t.id); t.fout = without(t.fout, me.id);
+  me.fout = without(me.fout, t.id); t.fin = without(t.fin, me.id);
+  if (!me.friends.includes(t.id)) me.friends.push(t.id);
+  if (!t.friends.includes(me.id)) t.friends.push(me.id);
+  saveU(me); saveU(t);
+  notice(p, '🤝 ' + t.name + ' jest teraz Twoim znajomym.');
+  const tp = onlineP(t.id); if (tp) notice(tp, '🤝 ' + me.name + ' przyjął(-ęła) Twoje zaproszenie.');
+  pushFriends(me); pushFriends(t);
+}
+function friendDrop(p, m, how) {                 // decline: odrzucam zaproszenie do mnie, cancel: cofam swoje, remove: usuwam znajomego
+  const me = p.user, t = userByName(m.name); if (!t) return;
+  if (how === 'decline') { me.fin = without(me.fin, t.id); t.fout = without(t.fout, me.id); }
+  else if (how === 'cancel') { me.fout = without(me.fout, t.id); t.fin = without(t.fin, me.id); }
+  else {
+    me.friends = without(me.friends, t.id); t.friends = without(t.friends, me.id);
+    const ch = challenges.get(me.id); if (ch && ch.to === t.id) cancelChallenge(me.id);
+    const ch2 = challenges.get(t.id); if (ch2 && ch2.to === me.id) cancelChallenge(t.id);
+  }
+  saveU(me); saveU(t); pushFriends(me); pushFriends(t);
+}
+
+// wyzwanie: tylko znajomy dla znajomego, 60 s na odpowiedź, zawsze bez rankingu
+function cancelChallenge(fromId, why) {
+  const ch = challenges.get(fromId); if (!ch) return;
+  challenges.delete(fromId);
+  const f = onlineP(fromId), tp = onlineP(ch.to), fu = users.get(fromId);
+  if (tp && fu) sendP(tp, { type: 'challengeGone', from: fu.name });
+  if (why && f) { notice(f, why); sendP(f, { type: 'idle' }); }
+}
+function dropChallengesTo(toId) {
+  for (const [fid, ch] of challenges) if (ch.to === toId) cancelChallenge(fid, 'Znajomy się rozłączył – wyzwanie anulowane.');
+}
+function challengeSend(p, m) {
+  const me = p.user;
+  if (p.game || isGuest(me)) return;
+  if (!DIFFS[m.diff]) return;
+  const mode = MODES.includes(m.mode) ? m.mode : 'classic';
+  if (mode !== 'classic' && DIFFS[m.diff].blind) return notice(p, 'Hardcore jest tylko w grze klasycznej.');
+  if (limited('chal:' + me.id, 15, 60e3)) return notice(p, 'Za dużo wyzwań, poczekaj chwilę.');
+  const t = userByName(m.name);
+  if (!t || !me.friends.includes(t.id)) return notice(p, 'Wyzwać można tylko znajomych.');
+  const tp = onlineP(t.id);
+  if (!tp) return notice(p, t.name + ' jest offline.');
+  if (tp.game) return notice(p, t.name + ' jest teraz w grze.');
+  leaveAll(p);
+  challenges.set(me.id, { to: t.id, diff: m.diff, mode, at: Date.now() });
+  sendP(p, { type: 'challengeSent', name: t.name, diff: m.diff, mode, ttl: CHALLENGE_TTL_MS });
+  sendP(tp, { type: 'challenge', from: me.name, diff: m.diff, mode, ttl: CHALLENGE_TTL_MS });
+}
+function challengeFind(p, m) {
+  const f = userByName(m.from); if (!f) return null;
+  const ch = challenges.get(f.id);
+  return ch && ch.to === p.user.id ? { f, ch } : null;
+}
+function challengeAccept(p, m) {
+  const x = challengeFind(p, m);
+  if (!x) return notice(p, 'To wyzwanie już wygasło.');
+  const fp = onlineP(x.f.id);
+  if (!fp || fp.game || p.game) { cancelChallenge(x.f.id, 'Wyzwanie nie jest już możliwe.'); return; }
+  challenges.delete(x.f.id);
+  startGame(fp, p, x.ch.diff, { ranked: false, friend: true, mode: x.ch.mode });
+}
+function challengeDecline(p, m) {
+  const x = challengeFind(p, m); if (!x) return;
+  cancelChallenge(x.f.id, p.user.name + ' odrzucił(-a) wyzwanie.');
+}
 
 // ================= ZAGADKA DNIA =================
 // Jedna plansza na poziom na dobę (czas polski), taka sama dla wszystkich. Czas mierzy serwer: od pierwszego pobrania do wysłania poprawnej planszy.
