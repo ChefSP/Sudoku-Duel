@@ -20,6 +20,12 @@ const DIFFS = {
   hard:     { label: 'Trudny',   remove: 55, lock: 10000 },
   hardcore: { label: 'Hardcore', remove: 55, lock: 0, blind: true }   // bez blokady i bez sprawdzania cyfr
 };
+// tryby gry (na razie wszystkie poza klasycznym są bez rankingu)
+const MODES = ['classic', 'blitz', 'line', 'sprint'];
+const BLITZ_ROUNDS = 3;           // Blitz: 3 plansze pod rząd, wygrywa ten, kto weźmie więcej (2 wygrane kończą serię)
+const LINE_TARGET = 3;            // Linie: wygrywa pierwszy, kto skompletuje tyle rzędów / kolumn / bloków 3x3
+const LINE_MIN_EMPTY = 4;         // do Linii liczą się tylko rzędy/kolumny/bloki z co najmniej tyloma pustymi polami
+const SPRINT_TARGET = 20;         // Sprint: wygrywa pierwszy, kto wstawi tyle poprawnych cyfr
 const ROOM_TTL_MS = 10 * 60e3;    // jak długo ważny jest link do znajomego
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const REMATCH_MS = 120e3;         // jak długo po meczu można poprosić o rewanż
@@ -169,7 +175,7 @@ function newUser(name) {
   return {
     id: crypto.randomUUID(), name, pass: null, google: null, sessions: [],
     stats: Object.fromEntries(Object.keys(DIFFS).map(d => [d, newStats()])),
-    history: [], eloLog: {}, badges: [],
+    history: [], eloLog: {}, badges: [], daily: { date: '', runs: {}, done: {} },
     flags: 0, createdAt: now, lastSeen: now
   };
 }
@@ -296,6 +302,7 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   if (!Array.isArray(u.history)) u.history = [];
   if (!u.eloLog || typeof u.eloLog !== 'object') u.eloLog = {};
   if (!Array.isArray(u.badges)) u.badges = [];
+  if (!u.daily || typeof u.daily !== 'object') u.daily = { date: '', runs: {}, done: {} };
 }
 function pub(u) {
   return { name: u.name, guest: isGuest(u), google: !!u.google, stats: u.stats };
@@ -443,7 +450,7 @@ const wss = new WebSocketServer({ server, maxPayload: 4096 });
 
 // ================= GRA =================
 const players = new Map();                        // userId -> p
-const queues = { ranked: {}, casual: {} };        // rankingowa (tylko konta) i towarzyska (każdy, bez Elo)
+const queues = { ranked: {}, casual: {}, blitz: {}, line: {}, sprint: {} };        // rankingowa (tylko konta) i towarzyska (każdy, bez Elo)
 for (const k of Object.keys(queues)) for (const d of Object.keys(DIFFS)) queues[k][d] = [];
 const rooms = new Map();                          // kod -> { hostId, diff, at }  (pojedynek ze znajomym)
 const pendingResults = new Map();                 // userId -> wiadomość (gdy gracz był offline w chwili końca meczu)
@@ -491,14 +498,16 @@ wss.on('connection', (ws, req) => {
 
     if (m.type === 'queue') {
       if (p.game || !DIFFS[m.diff]) return;
-      const ranked = !!m.ranked;
+      const mode = MODES.includes(m.mode) ? m.mode : 'classic';
+      if (mode !== 'classic' && DIFFS[m.diff].blind) return notice(p, 'Hardcore jest tylko w grze klasycznej.');
+      const ranked = mode === 'classic' && !!m.ranked;
       if (ranked && isGuest(p.user)) {
         notice(p, 'Gra rankingowa wymaga konta. Zaloguj się albo zagraj w kolejce towarzyskiej.');
         return sendP(p, { type: 'idle' });
       }
       leaveAll(p);
-      queues[ranked ? 'ranked' : 'casual'][m.diff].push({ p, since: Date.now() });
-      sendP(p, { type: 'queued', diff: m.diff, ranked });
+      queues[ranked ? 'ranked' : mode === 'classic' ? 'casual' : mode][m.diff].push({ p, since: Date.now() });
+      sendP(p, { type: 'queued', diff: m.diff, ranked, mode });
     }
     else if (m.type === 'cancel') { leaveAll(p); sendP(p, { type: 'idle' }); }
     else if (m.type === 'report') handleReport(p, m);
@@ -508,11 +517,13 @@ wss.on('connection', (ws, req) => {
     else if (m.type === 'resign' && p.game) endGame(p.game, 1 - p.idx, 'resign');
     else if (m.type === 'room') {                                    // zaproszenie znajomego
       if (p.game || !DIFFS[m.diff]) return;
+      const mode = MODES.includes(m.mode) ? m.mode : 'classic';
+      if (mode !== 'classic' && DIFFS[m.diff].blind) return notice(p, 'Hardcore jest tylko w grze klasycznej.');
       leaveAll(p);
       let code;
       do { code = Array.from(crypto.randomBytes(6), b => ROOM_ALPHABET[b % ROOM_ALPHABET.length]).join(''); } while (rooms.has(code));
-      rooms.set(code, { hostId: p.user.id, diff: m.diff, at: Date.now() });
-      sendP(p, { type: 'room', code, diff: m.diff, ttl: ROOM_TTL_MS });
+      rooms.set(code, { hostId: p.user.id, diff: m.diff, mode, at: Date.now() });
+      sendP(p, { type: 'room', code, diff: m.diff, mode, ttl: ROOM_TTL_MS });
     }
     else if (m.type === 'join') {
       if (p.game) return;
@@ -523,7 +534,7 @@ wss.on('connection', (ws, req) => {
       if (host === p) return notice(p, 'To Twoje własne zaproszenie. Wyślij link znajomemu.');
       if (!r || !host || !host.ws || host.game) { rooms.delete(code); return notice(p, 'Zaproszenie wygasło lub nie istnieje.'); }
       rooms.delete(code);
-      startGame(host, p, r.diff, { ranked: false, friend: true });
+      startGame(host, p, r.diff, { ranked: false, friend: true, mode: r.mode });
     }
     else if (m.type === 'rematch') {
       const L = p.last, o = L && players.get(L.oppId);
@@ -532,7 +543,7 @@ wss.on('connection', (ws, req) => {
       p.rematchWant = true;
       if (o.rematchWant) {
         p.last = o.last = null; p.rematchWant = o.rematchWant = false;
-        startGame(o, p, L.diff, { ranked: L.ranked, friend: L.friend });
+        startGame(o, p, L.diff, { ranked: L.ranked, friend: L.friend, mode: L.mode });
       } else {
         sendP(p, { type: 'rematchWait' });
         sendP(o, { type: 'rematchOffer' });
@@ -599,8 +610,10 @@ function handleHello(ws, m) {
 // rankingowa: okno różnicy Elo rośnie z czasem czekania; towarzyska: kto pierwszy, ten pierwszy
 setInterval(() => {
   for (const diff of Object.keys(DIFFS)) {
-    const qc = queues.casual[diff];
-    while (qc.length >= 2) { const a = qc.shift(), b = qc.shift(); startGame(a.p, b.p, diff, { ranked: false }); }
+    for (const k of ['casual', 'blitz', 'line', 'sprint']) {
+      const qc = queues[k][diff];
+      while (qc.length >= 2) { const a = qc.shift(), b = qc.shift(); startGame(a.p, b.p, diff, { ranked: false, mode: k === 'casual' ? 'classic' : k }); }
+    }
 
     const q = queues.ranked[diff];
     if (q.length < 2) continue;
@@ -627,17 +640,38 @@ setInterval(() => {
 function startGame(p0, p1, diff, opts = {}) {
   leaveAll(p0); leaveAll(p1);
   const cfg = DIFFS[diff];
-  const { puzzle, solution } = generatePuzzle(diff);
+  const mode = MODES.includes(opts.mode) ? opts.mode : 'classic';
   const game = {
-    diff, ranked: !!opts.ranked, friend: !!opts.friend, blind: !!cfg.blind, lockMs: cfg.lock,
-    players: [p0, p1], puzzle, solution,
-    empties: puzzle.filter(v => v === 0).length,
-    cur: [puzzle.slice(), puzzle.slice()],
-    filled: [0, 0], lockedUntil: [0, 0], lastMove: [0, 0],
-    startAt: Date.now() + COUNTDOWN_MS, over: false
+    diff, mode, ranked: mode === 'classic' && !!opts.ranked, friend: !!opts.friend, blind: !!cfg.blind, lockMs: cfg.lock,
+    players: [p0, p1], round: 1, score: [0, 0], over: false, t0: Date.now() + COUNTDOWN_MS
   };
+  setupBoard(game);
   [p0, p1].forEach((p, i) => { p.game = game; p.idx = i; p.emoteCount = 0; });
   [p0, p1].forEach((p, i) => sendP(p, matchPayload(game, i)));
+}
+
+const UNITS = [];                                          // 27 jednostek: 9 rzędów, 9 kolumn, 9 bloków 3x3
+for (let k = 0; k < 9; k++) {
+  UNITS.push(Array.from({ length: 9 }, (_, j) => k * 9 + j));
+  UNITS.push(Array.from({ length: 9 }, (_, j) => j * 9 + k));
+  const br = (k / 3 | 0) * 3, bc = (k % 3) * 3;
+  UNITS.push(Array.from({ length: 9 }, (_, j) => (br + (j / 3 | 0)) * 9 + bc + (j % 3)));
+}
+function setupBoard(g) {                                   // nowa plansza (start meczu albo kolejna runda Blitza)
+  const { puzzle, solution } = generatePuzzle(g.diff);
+  g.puzzle = puzzle; g.solution = solution;
+  g.empties = puzzle.filter(v => v === 0).length;
+  g.cur = [puzzle.slice(), puzzle.slice()];
+  g.filled = [0, 0]; g.prog = [0, 0]; g.lockedUntil = [0, 0]; g.lastMove = [0, 0];
+  g.startAt = g.round === 1 ? g.t0 : Date.now() + COUNTDOWN_MS;
+  const open = UNITS.filter(u => u.some(k => !puzzle[k]));
+  const big = open.filter(u => u.filter(k => !puzzle[k]).length >= LINE_MIN_EMPTY);
+  g.units = big.length >= LINE_TARGET * 2 ? big : open;     // liczą się linie, w których jest co robić (min. LINE_MIN_EMPTY pustych pól)
+  g.goal = g.mode === 'sprint' ? Math.min(SPRINT_TARGET, g.empties) : g.mode === 'line' ? Math.min(LINE_TARGET, g.units.length) : g.empties;
+}
+function progressOf(g, i) {
+  if (g.mode === 'line') { const c = g.cur[i]; return g.units.filter(u => u.every(k => c[k])).length; }
+  return g.filled[i];
 }
 
 function oppMask(g, i) {                                 // które pola ma wypełnione gracz i (bez cyfr, bez podpowiedzi)
@@ -647,7 +681,9 @@ function oppMask(g, i) {                                 // które pola ma wype�
 function matchPayload(g, i) {
   const now = Date.now(), o = g.players[1 - i];
   return {
-    type: 'match', diff: g.diff, ranked: g.ranked, friend: g.friend, blind: g.blind,
+    type: 'match', diff: g.diff, mode: g.mode, ranked: g.ranked, friend: g.friend, blind: g.blind,
+    round: g.round, rounds: g.mode === 'blitz' ? BLITZ_ROUNDS : 1, score: [g.score[i], g.score[1 - i]],
+    goal: g.goal, prog: g.prog[i], oppProg: g.prog[1 - i],
     puzzle: g.puzzle, cur: g.cur[i], empties: g.empties,
     elapsed: now - g.startAt,                          // ujemne = trwa odliczanie
     filled: g.filled[i], oppFilled: g.filled[1 - i], oppMask: oppMask(g, 1 - i),
@@ -655,6 +691,14 @@ function matchPayload(g, i) {
     opp: { name: o.user.name, elo: g.ranked ? o.user.stats[g.diff].elo : null },
     oppOnline: !!o.ws
   };
+}
+
+function boardWon(g, i) {
+  if (g.mode !== 'blitz') return endGame(g, i, 'solved');
+  g.score[i]++;
+  if (g.score[i] > BLITZ_ROUNDS / 2) return endGame(g, i, 'solved');
+  g.round++; setupBoard(g);                                  // następna plansza serii
+  g.players.forEach((q, k) => sendP(q, { ...matchPayload(g, k), roundWinner: i === k ? 'me' : 'opp' }));
 }
 
 function handleMove(p, m) {
@@ -687,9 +731,10 @@ function handleMove(p, m) {
   if (g.solution[idx] === v) {
     mine[idx] = v;
     g.filled[i]++;
-    sendP(p, { type: 'ok', r, c, v, filled: g.filled[i] });
-    sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: 1 });
-    if (g.filled[i] >= g.empties) endGame(g, i, 'solved');
+    g.prog[i] = progressOf(g, i);
+    sendP(p, { type: 'ok', r, c, v, filled: g.filled[i], prog: g.prog[i], goal: g.goal });
+    sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: 1, prog: g.prog[i], goal: g.goal });
+    if (g.prog[i] >= g.goal) boardWon(g, i);
   } else {
     g.lockedUntil[i] = now + g.lockMs;
     sendP(p, { type: 'wrong', r, c, lockMs: g.lockMs });
@@ -722,7 +767,8 @@ function deliver(p, msg) {
   }
 }
 
-function modeOf(g) { return g.friend ? 'friend' : g.ranked ? 'ranked' : 'casual'; }
+function modeOf(g) { return g.mode && g.mode !== 'classic' ? g.mode : g.friend ? 'friend' : g.ranked ? 'ranked' : 'casual'; }
+const lastMode = L => L.mode && L.mode !== 'classic' ? L.mode : L.friend ? 'friend' : L.ranked ? 'ranked' : 'casual';
 function pushElo(u, diff, elo, t) {
   const log = u.eloLog[diff] || (u.eloLog[diff] = [[u.createdAt, 1000]]);
   log.push([t, elo]);
@@ -739,7 +785,7 @@ function endGame(g, winnerIdx, reason, opts = {}) {
   g.over = true;
   const w = g.players[winnerIdx], l = g.players[1 - winnerIdx];
   const at = Date.now();
-  const ms = Math.max(0, at - g.startAt);
+  const ms = Math.max(0, at - g.t0);
   const diff = g.diff, mode = modeOf(g);
   const wu = w.user, lu = l.user;
 
@@ -770,11 +816,11 @@ function endGame(g, winnerIdx, reason, opts = {}) {
   logHistory(lu, { t: at, opp: wu.name, diff, mode, won: false, reason, ms, delta: lDelta, elo: eloAfter(lu), void: voided });
   saveU(wu); saveU(lu);
 
-  const base = { type: 'result', reason, ms, diff, ranked: g.ranked, friend: g.friend, void: voided };
-  deliver(w, { ...base, won: true, delta: wDelta, rank: wRank, user: pub(wu) });
-  deliver(l, { ...base, won: false, delta: lDelta, rank: lRank, user: pub(lu) });
-  w.last = { oppId: lu.id, oppIp: l.ip, diff, ranked: g.ranked, friend: g.friend, at, ms };   // rewanż i zgłoszenie
-  l.last = { oppId: wu.id, oppIp: w.ip, diff, ranked: g.ranked, friend: g.friend, at, ms };
+  const base = { type: 'result', reason, ms, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, void: voided };
+  deliver(w, { ...base, won: true, delta: wDelta, rank: wRank, score: [g.score[winnerIdx], g.score[1 - winnerIdx]], user: pub(wu) });
+  deliver(l, { ...base, won: false, delta: lDelta, rank: lRank, score: [g.score[1 - winnerIdx], g.score[winnerIdx]], user: pub(lu) });
+  w.last = { oppId: lu.id, oppIp: l.ip, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, at, ms };   // rewanż i zgłoszenie
+  l.last = { oppId: wu.id, oppIp: w.ip, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, at, ms };
   for (const p of [w, l]) {
     clearTimeout(p.graceTimer);
     p.game = null; p.rematchWant = false;
@@ -793,10 +839,10 @@ function handleReport(p, m) {
   if (g && !g.over) {
     const o = g.players[1 - p.idx];
     target = o.user; ip = o.ip;
-    ctx = { diff: g.diff, mode: modeOf(g), ms: Date.now() - g.startAt, live: true, at: Date.now() };
+    ctx = { diff: g.diff, mode: modeOf(g), ms: Date.now() - g.t0, live: true, at: Date.now() };
   } else if (p.last) {
     target = users.get(p.last.oppId); ip = p.last.oppIp;
-    ctx = { diff: p.last.diff, mode: p.last.friend ? 'friend' : p.last.ranked ? 'ranked' : 'casual', ms: p.last.ms, live: false, at: p.last.at };
+    ctx = { diff: p.last.diff, mode: lastMode(p.last), ms: p.last.ms, live: false, at: p.last.at };
   }
   if (!target) return notice(p, 'Nie ma kogo zgłosić. Zgłoszenie jest możliwe w trakcie meczu i na ekranie wyniku.');
   if (target.id === p.user.id) return;
@@ -979,6 +1025,93 @@ function rollSeason(newId) {
 }
 setInterval(() => { const id = seasonId(); if (meta.season && id !== meta.season) rollSeason(id); }, 60e3).unref();
 
+// ================= ZAGADKA DNIA =================
+// Jedna plansza na poziom na dobę (czas polski), taka sama dla wszystkich. Czas mierzy serwer: od pierwszego pobrania do wysłania poprawnej planszy.
+const warsawDay = (d = new Date()) => d.toLocaleString('sv-SE', { timeZone: 'Europe/Warsaw' }).slice(0, 10);
+function dayEnd(day) {
+  const [y, m, d] = day.split('-').map(Number), guess = Date.UTC(y, m - 1, d + 1);
+  const off = Date.parse(new Date(guess).toLocaleString('sv-SE', { timeZone: 'Europe/Warsaw' }).replace(' ', 'T') + 'Z') - guess;
+  return guess - off;
+}
+const DAILY_BOARD_MAX = 500;
+function dailyNow() {
+  const day = warsawDay();
+  if (!meta.daily || meta.daily.date !== day) {
+    const prev = meta.daily ? { date: meta.daily.date, top: Object.fromEntries(Object.keys(DIFFS).map(d => [d, dailyTop(meta.daily, d, 3)])) } : null;
+    const puzzles = {}, boards = {};
+    for (const d of Object.keys(DIFFS)) { puzzles[d] = generatePuzzle(d); boards[d] = []; }
+    meta.daily = { date: day, puzzles, boards, prev };
+    store.save('meta', meta);
+  }
+  return meta.daily;
+}
+function dailyTop(daily, diff, n) {
+  return daily.boards[diff].map(e => ({ e, u: users.get(e.id) }))
+    .filter(x => x.u && x.u.flags < FLAGS_HIDE && !userBanned(x.u.id)).slice(0, n)
+    .map(x => ({ name: x.u.name, ms: x.e.ms }));
+}
+function dailyUser(u, day) {
+  if (u.daily.date !== day) u.daily = { date: day, runs: {}, done: {} };
+  return u.daily;
+}
+function dailyRank(daily, diff, id) { const i = daily.boards[diff].findIndex(e => e.id === id); return i < 0 ? null : i + 1; }
+
+app.post('/api/daily/start', (req, res) => {
+  if (limited('dstart:' + ipOf(req), 40, 60e3)) return res.status(429).json({ error: 'Za dużo zapytań.' });
+  const u = userByToken((req.body || {}).token), diff = (req.body || {}).diff;
+  if (!u) return res.status(401).json({ error: 'Zaloguj się ponownie.' });
+  if (!DIFFS[diff]) return res.status(400).json({ error: 'Zły poziom.' });
+  const daily = dailyNow(), pz = daily.puzzles[diff];
+  if (isGuest(u)) return res.json({ date: daily.date, diff, puzzle: pz.puzzle, solution: pz.solution, elapsed: 0, guest: true });
+  const du = dailyUser(u, daily.date);
+  if (du.done[diff] != null) return res.json({ date: daily.date, diff, done: true, ms: du.done[diff], rank: dailyRank(daily, diff, u.id) });
+  if (!du.runs[diff]) { du.runs[diff] = Date.now(); saveU(u); }
+  res.json({ date: daily.date, diff, puzzle: pz.puzzle, solution: pz.solution, elapsed: Date.now() - du.runs[diff] });
+});
+
+app.post('/api/daily/finish', (req, res) => {
+  if (limited('dfin:' + ipOf(req), 40, 60e3)) return res.status(429).json({ error: 'Za dużo zapytań.' });
+  const b = req.body || {}, u = userByToken(b.token), diff = b.diff;
+  if (!u) return res.status(401).json({ error: 'Zaloguj się ponownie.' });
+  if (isGuest(u) || !DIFFS[diff]) return res.status(400).json({ error: 'Wynik zapisują tylko konta.' });
+  const daily = dailyNow(), du = dailyUser(u, daily.date), sol = daily.puzzles[diff].solution;
+  if (du.done[diff] != null) return res.json({ ms: du.done[diff], rank: dailyRank(daily, diff, u.id), already: true });
+  if (!du.runs[diff]) return res.status(400).json({ error: 'Najpierw rozpocznij zagadkę.' });
+  if (!Array.isArray(b.cur) || b.cur.length !== 81 || !b.cur.every((v, k) => v === sol[k])) return res.status(400).json({ error: 'Plansza nie jest poprawnie rozwiązana.' });
+  const ms = Date.now() - du.runs[diff], empties = daily.puzzles[diff].puzzle.filter(v => !v).length;
+  if (ms < empties * MIN_MS_PER_CELL) {                       // jak w grze rankingowej: czas niemożliwy dla człowieka
+    u.flags++; delete du.runs[diff]; saveU(u);
+    return res.status(400).json({ error: 'Wynik w czasie niemożliwym dla człowieka. Nie został zapisany.' });
+  }
+  du.done[diff] = ms;
+  const board = daily.boards[diff];
+  board.push({ id: u.id, ms }); board.sort((x, y) => x.ms - y.ms);
+  if (board.length > DAILY_BOARD_MAX) board.length = DAILY_BOARD_MAX;
+  store.save('meta', meta); saveU(u);
+  res.json({ ms, rank: dailyRank(daily, diff, u.id), total: board.length });
+});
+
+app.get('/api/daily/board', (req, res) => {
+  const diff = DIFFS[req.query.diff] ? req.query.diff : 'medium', daily = dailyNow();
+  res.json({ date: daily.date, endsAt: dayEnd(daily.date), diff, count: daily.boards[diff].length, top: dailyTop(daily, diff, 20),
+             prev: daily.prev ? { date: daily.prev.date, top: daily.prev.top[diff] || [] } : null });
+});
+
+app.post('/api/daily/status', (req, res) => {
+  if (limited('dstat:' + ipOf(req), 60, 60e3)) return res.status(429).json({ error: 'Za dużo zapytań.' });
+  const u = userByToken((req.body || {}).token);
+  if (!u) return res.status(401).json({ error: 'Zaloguj się ponownie.' });
+  const daily = dailyNow(), out = { date: daily.date, endsAt: dayEnd(daily.date), guest: isGuest(u), done: {}, running: {} };
+  if (!isGuest(u)) {
+    const du = dailyUser(u, daily.date);
+    for (const d of Object.keys(DIFFS)) {
+      if (du.done[d] != null) out.done[d] = { ms: du.done[d], rank: dailyRank(daily, d, u.id) };
+      else if (du.runs[d]) out.running[d] = true;
+    }
+  }
+  res.json(out);
+});
+
 // ================= START =================
 async function main() {
   const data = await store.load();
@@ -997,6 +1130,7 @@ async function main() {
     if (changed) saveU(u);
   }
   const cur = seasonId();
+  if (meta.season) dailyNow();                   // przygotuj dzisiejsze zagadki od razu
   if (firstRun) { meta.season = cur; store.save('meta', meta); }
   else if (meta.season !== cur) rollSeason(cur);
   console.log(`Baza: ${store.kind}, użytkowników: ${users.size}, zgłoszeń: ${reports.size}, blokad: ${banById.size}`);
@@ -1004,4 +1138,4 @@ async function main() {
 }
 if (require.main === module || process.env.SUDOKU_TEST) main().catch(e => { console.error(e); process.exit(1); });
 
-module.exports = { generatePuzzle, countSolutions, DIFFS, rollSeason, seasonId, _users: users };
+module.exports = { UNITS, generatePuzzle, countSolutions, DIFFS, rollSeason, seasonId, _users: users };

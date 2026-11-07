@@ -169,6 +169,8 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
       <b>Tryb gry</b>
       <div class="seg" id="diffSeg"></div>
       <div class="info" id="diffInfo"></div>
+      <div class="seg wrap" id="modeSeg"></div>
+      <div class="info" id="modeInfo"></div>
       <div class="seg" id="kindSeg">
         <button id="kRanked">🏆 Rankingowa</button>
         <button id="kCasual">🤝 Towarzyska</button>
@@ -185,6 +187,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
         <button class="sec" id="soloBtn">🧩 Solo</button>
         <button class="sec" id="friendBtn">👥 Ze znajomym</button>
       </div>
+      <button class="sec" id="dailyBtn">📅 Zagadka dnia</button>
     </div>
     <div class="card">
       <b>🏆 Ranking TOP 20 <span id="lbDiff" style="color:var(--muted);font-weight:400"></span></b>
@@ -238,6 +241,17 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
   </div>
 
   <!-- STATYSTYKI -->
+  <div id="daily" class="hidden">
+    <h1>📅 Zagadka dnia</h1>
+    <p class="sub" id="dSub"></p>
+    <div class="seg" id="dDiffSeg"></div>
+    <div class="card" id="dCard"></div>
+    <div class="card"><b>Tabela dnia <span id="dLbDiff" style="color:var(--muted);font-weight:400"></span></b>
+      <table id="dLb"><tr><td class="sub">Ładowanie…</td></tr></table>
+      <div class="info" id="dPrev" style="margin-top:8px"></div></div>
+    <button class="sec" id="dBack">← Wróć do menu</button>
+  </div>
+
   <div id="profile" class="hidden">
     <h1>Statystyki <span id="pName"></span></h1>
     <p class="sub">Liczą się mecze rankingowe. Czasy tylko z rozwiązanych plansz.</p>
@@ -312,7 +326,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
 <script>
 const $ = id => document.getElementById(id);
-const screens = ['menu','searching','game','result','profile'];
+const screens = ['menu','searching','game','result','profile','daily'];
 function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
@@ -380,6 +394,13 @@ let RANKS = [{min:0,name:'Brąz',icon:'🥉'},{min:1100,name:'Srebro',icon:'🥈
 const rankIdx = elo => { let k = 0; RANKS.forEach((r, i) => { if (elo >= r.min) k = i; }); return k; };
 const rankOf = elo => RANKS[rankIdx(elo)];
 const MEDAL = ['🥇','🥈','🥉'];
+const MODES = {
+  classic: { label: '🧩 Klasyczna', short: '', info: 'Pierwszy, kto wypełni całą planszę.' },
+  blitz:   { label: '⚡ Blitz',     short: '⚡ Blitz',  info: '3 plansze pod rząd. Wygrywa ten, kto pierwszy weźmie 2 z 3. Bez rankingu.' },
+  line:    { label: '📏 Linie',     short: '📏 Linie',  info: 'Wygrywa pierwszy, kto skompletuje 3 rzędy, kolumny lub bloki 3×3 (liczą się te z co najmniej 4 pustymi polami). Bez rankingu.' },
+  sprint:  { label: '🏁 Sprint',    short: '🏁 Sprint', info: 'Wygrywa pierwszy, kto wstawi 20 poprawnych cyfr. Bez rankingu.' }
+};
+const MODE_WIN = { blitz: 'serię', line: '3 linie', sprint: '20 cyfr' };
 function renderRankInfo(s){
   const el = $('rankInfo'), i = rankIdx(s.elo), r = RANKS[i], nx = RANKS[i + 1];
   const base = i === 0 ? 900 : r.min;
@@ -390,6 +411,7 @@ function renderRankInfo(s){
 let ws, me = null, cfg = {}, G = null, sel = -1, lockUntil = 0, timerInt = null, reconnectT = null, oppT = null, toastT = null;
 let curDiff = store.get('diff'); if (!DIFFS[curDiff]) curDiff = 'medium';
 let kind = store.get('kind') === 'ranked' ? 'ranked' : 'casual';
+let gmode = store.get('gmode'); if (!MODES[gmode]) gmode = 'classic';
 let replaced = false, authMode = 'login', captcha = '', tsId = null, googleReady = false;
 let notes = new Array(81).fill(0), noteMode = false, lastClick = { i: -1, t: 0 };
 let lastPlay = null;                                   // co powtórzyć w "Szukaj nowego" / "Kolejna plansza"
@@ -421,7 +443,7 @@ function onMsg(m){
   else if (m.type === 'online') $('online').textContent = '🟢 online: ' + m.n;
   else if (m.type === 'queued'){
     $('searchTitle').textContent = 'Szukam przeciwnika…';
-    $('searchSub').textContent = DIFFS[m.diff].label + (m.ranked ? ' · rankingowa' : ' · towarzyska');
+    $('searchSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : m.ranked ? ' · rankingowa' : ' · towarzyska');
     $('roomBox').classList.add('hidden'); show('searching');
   }
   else if (m.type === 'room') showRoom(m);
@@ -429,7 +451,7 @@ function onMsg(m){
   else if (m.type === 'match') startMatch(m);
   else if (m.type === 'ok'){
     G.cur[sel2idx(m)] = m.v; if (m.v) placed(sel2idx(m), m.v);
-    $('meBar').style.width = (m.filled / G.empties * 100) + '%'; render();
+    $('meBar').style.width = ((m.prog != null ? m.prog : m.filled) / (G.goal || G.empties) * 100) + '%'; render();
     if (m.v){ Snd(G.blind ? 'place' : 'ok'); afterPlace(sel2idx(m)); }
   }
   else if (m.type === 'wrong'){
@@ -437,7 +459,7 @@ function onMsg(m){
   }
   else if (m.type === 'full') toast('Plansza jest pełna, ale gdzieś jest błąd. Szukaj dalej!');
   else if (m.type === 'opp'){
-    $('oppBar').style.width = (m.filled / G.empties * 100) + '%';
+    $('oppBar').style.width = ((m.prog != null ? m.prog : m.filled) / (G.goal || G.empties) * 100) + '%';
     if (G && m.cell != null){ G.oppMask[m.cell] = m.on; renderMini(); }
   }
   else if (m.type === 'emote') showEmote(m);
@@ -476,9 +498,19 @@ function renderMe(){
   renderMode();
 }
 function renderMode(){
+  const special = gmode !== 'classic';
+  if (special && DIFFS[curDiff].blind) curDiff = 'hard';          // Hardcore tylko w klasycznej
+  $('modeSeg').innerHTML = '';
+  for (const k of Object.keys(MODES)){
+    const b = document.createElement('button'); b.textContent = MODES[k].label; b.className = k === gmode ? 'on' : '';
+    b.onclick = () => { gmode = k; store.set('gmode', k); renderMode(); loadLb(); };
+    $('modeSeg').appendChild(b);
+  }
+  $('modeInfo').textContent = MODES[gmode].info;
   $('diffSeg').innerHTML = '';
   for (const d of Object.keys(DIFFS)){
     const b = document.createElement('button'); b.textContent = DIFFS[d].label; b.className = d === curDiff ? 'on' : '';
+    if (special && DIFFS[d].blind) b.disabled = true;
     b.onclick = () => { curDiff = d; store.set('diff', d); renderMode(); loadLb(); };
     $('diffSeg').appendChild(b);
   }
@@ -488,15 +520,16 @@ function renderMode(){
     : 'Błędna cyfra blokuje Cię na ' + D.lock + ' s.';
   const guest = !me || me.guest;
   if (guest) kind = 'casual';
-  $('kRanked').disabled = guest;
-  $('kRanked').classList.toggle('on', kind === 'ranked');
-  $('kCasual').classList.toggle('on', kind === 'casual');
-  $('kindInfo').textContent = guest ? 'Gra rankingowa wymaga konta – zaloguj się.'
+  const rk = kind === 'ranked' && !special;
+  $('kRanked').disabled = guest || special;
+  $('kRanked').classList.toggle('on', rk);
+  $('kCasual').classList.toggle('on', !rk);
+  $('kindInfo').textContent = special ? 'Ten tryb jest na razie bez rankingu.' : guest ? 'Gra rankingowa wymaga konta – zaloguj się.'
     : kind === 'ranked' ? 'Liczy się do rankingu Elo.' : 'Bez wpływu na ranking.';
-  $('statsBox').classList.toggle('hidden', guest || kind !== 'ranked');
+  $('statsBox').classList.toggle('hidden', guest || !rk);
   const s = me && me.stats[curDiff] ? me.stats[curDiff] : { elo: 1000, wins: 0, losses: 0 };
   $('elo').textContent = s.elo; $('wins').textContent = s.wins; $('losses').textContent = s.losses;
-  $('rankInfo').classList.toggle('hidden', guest || kind !== 'ranked'); if (!guest) renderRankInfo(s);
+  $('rankInfo').classList.toggle('hidden', guest || !rk); if (!guest) renderRankInfo(s);
   $('lbDiff').textContent = '· ' + D.label;
 }
 $('kRanked').onclick = () => { kind = 'ranked'; store.set('kind', kind); renderMode(); };
@@ -651,26 +684,30 @@ function confetti(){
 function startMatch(m){
   animUntil.fill(0);
   const sig = m.puzzle.join('');
-  G = { puzzle: m.puzzle, cur: m.cur.slice(), empties: m.empties, diff: m.diff, blind: m.blind, sig, solo: null,
+  const mode = m.mode || 'classic';
+  G = { puzzle: m.puzzle, cur: m.cur.slice(), empties: m.empties, diff: m.diff, blind: m.blind, sig, solo: null, goal: m.goal || m.empties, gmode: mode,
         oppMask: m.oppMask ? m.oppMask.slice() : new Array(81).fill(0) };
   notes = new Array(81).fill(0);
   try { const s = JSON.parse(sess.get('notes') || 'null'); if (s && s.sig === sig) notes = s.notes; } catch {}
   setNoteMode(false);
   sel = -1; lockUntil = Date.now() + (m.lockMs || 0);
-  const mode = m.friend ? 'ze znajomym' : m.ranked ? 'rankingowa' : 'towarzyska';
+  const kindTxt = mode !== 'classic' ? MODES[mode].short + (m.friend ? ' · ze znajomym' : '')
+    + (mode === 'blitz' ? ' · plansza ' + m.round + '/' + m.rounds + ' · ' + m.score[0] + ':' + m.score[1] : '')
+    : m.friend ? 'ze znajomym' : m.ranked ? 'rankingowa' : 'towarzyska';
+  if (m.roundWinner) toast((m.roundWinner === 'me' ? 'Ta plansza jest Twoja! 🎉' : 'Rywal był szybszy na tej planszy.') + ' Wynik ' + m.score[0] + ':' + m.score[1]);
   $('oppName').textContent = m.opp.name;
-  $('oppElo').textContent = DIFFS[m.diff].label + ' · ' + mode + (m.opp.elo != null ? ' · ' + rankOf(m.opp.elo).icon + ' Elo ' + m.opp.elo : '');
+  $('oppElo').textContent = DIFFS[m.diff].label + ' · ' + kindTxt + (m.opp.elo != null ? ' · ' + rankOf(m.opp.elo).icon + ' Elo ' + m.opp.elo : '');
   $('oppProg').classList.remove('hidden');
   $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); renderMini(); $('chatBtn').classList.remove('hidden');
-  $('oppBar').style.width = (m.oppFilled / m.empties * 100) + '%';
-  $('meBar').style.width = (m.filled / m.empties * 100) + '%';
+  $('oppBar').style.width = ((m.oppProg != null ? m.oppProg : m.oppFilled) / G.goal * 100) + '%';
+  $('meBar').style.width = ((m.prog != null ? m.prog : m.filled) / G.goal * 100) + '%';
   $('oppnote').textContent = ''; clearInterval(oppT);
   if (m.oppOnline === false) oppStatus({ online: false, graceMs: 30000 });
   $('eraseBtn').classList.toggle('hidden', !m.blind);
   $('reportGame').classList.remove('hidden');
   $('resign').textContent = 'Poddaj się';
   $('lock').textContent = ''; banner('');
-  lastPlay = { kind: 'queue', diff: m.diff, ranked: m.ranked && !m.friend };
+  lastPlay = { kind: 'queue', diff: m.diff, ranked: m.ranked && !m.friend, mode };
   render(); show('game');
   startTimer(performance.now() - m.elapsed);        // elapsed < 0 = trwa odliczanie
 }
@@ -761,19 +798,32 @@ document.addEventListener('keydown', e => {
 });
 
 // ---------- solo ----------
-async function startSolo(diff){
+async function startSolo(diff, daily){
   let d;
   try {
-    const r = await fetch('/api/solo?diff=' + diff);
-    if (!r.ok) throw 0;
-    d = await r.json();
+    if (daily){
+      const r = await fetch('/api/daily/start', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: store.get('token'), diff }) });
+      d = await r.json(); if (!r.ok) throw 0;
+      if (d.done){ toast('Dzisiejsza zagadka na tym poziomie jest już rozwiązana.'); openDaily(); return; }
+    } else {
+      const r = await fetch('/api/solo?diff=' + diff);
+      if (!r.ok) throw 0;
+      d = await r.json();
+    }
   } catch { toast('Nie udało się pobrać planszy. Spróbuj ponownie.'); return; }
   const D = DIFFS[diff];
   G = { puzzle: d.puzzle, cur: d.puzzle.slice(), empties: d.puzzle.filter(v => !v).length, diff, blind: !!D.blind,
-        sig: 'solo', solo: { solution: d.solution, errors: 0, filled: 0, t0: performance.now(), done: false } };
+        sig: 'solo', solo: { solution: d.solution, errors: 0, filled: 0, t0: performance.now() - (d.elapsed || 0), done: false, daily: daily ? { date: d.date, guest: !!d.guest } : null } };
+  G.goal = G.empties;
+  if (daily && !d.guest){                      // wznowienie rozpoczętej zagadki (zegar serwera cały czas płynie)
+    try {
+      const sv = store.get('dp_' + d.date + '_' + diff);
+      if (sv && sv.length === 81) for (let k = 0; k < 81; k++){ const v = +sv[k]; if (!d.puzzle[k] && v >= 0 && v <= 9 && v){ G.cur[k] = v; G.solo.filled++; } }
+    } catch {}
+  }
   notes = new Array(81).fill(0); setNoteMode(false); sel = -1; lockUntil = 0; animUntil.fill(0);
-  lastPlay = { kind: 'solo', diff };
-  $('oppName').textContent = 'Solo · ' + D.label;
+  lastPlay = { kind: daily ? 'daily' : 'solo', diff };
+  $('oppName').textContent = (daily ? '📅 Zagadka dnia · ' : 'Solo · ') + D.label;
   updateSoloInfo();
   $('oppProg').classList.add('hidden'); $('oppnote').textContent = ''; clearInterval(oppT);
   renderMini(); $('chatBtn').classList.add('hidden');
@@ -781,8 +831,10 @@ async function startSolo(diff){
   $('eraseBtn').classList.toggle('hidden', !D.blind);
   $('reportGame').classList.add('hidden');
   $('resign').textContent = 'Wyjdź';
+  $('meBar').style.width = (G.solo.filled / G.empties * 100) + '%';
   render(); show('game');
   startTimer(G.solo.t0);
+  if (G.solo.filled >= G.empties) soloFinish();     // wznowiona plansza była już pełna (np. nie udało się wysłać wyniku)
 }
 function updateSoloInfo(){
   $('oppElo').textContent = G.blind ? 'Cyfry sprawdzane dopiero na końcu' : 'Błędy: ' + G.solo.errors;
@@ -794,6 +846,7 @@ function soloMove(v){
     if (cur === v) return;
     S.filled += (v ? 1 : 0) - (cur ? 1 : 0);
     G.cur[sel] = v; if (v){ placed(sel, v); Snd('place'); }
+    saveDaily();
     $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render();
     if (S.filled >= G.empties){
       if (G.cur.every((x, k) => x === S.solution[k])) soloFinish();
@@ -803,14 +856,40 @@ function soloMove(v){
   }
   if (cur !== 0) return;
   if (v === S.solution[sel]){
-    G.cur[sel] = v; S.filled++; placed(sel, v); Snd('ok');
+    G.cur[sel] = v; S.filled++; placed(sel, v); Snd('ok'); saveDaily();
     $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render(); afterPlace(sel);
     if (S.filled >= G.empties) soloFinish();
   } else { S.errors++; flash(sel); Snd('wrong'); updateSoloInfo(); }
 }
+function saveDaily(){
+  const S = G && G.solo; if (!S || !S.daily || S.daily.guest) return;
+  store.set('dp_' + S.daily.date + '_' + G.diff, G.cur.join(''));
+}
+async function dailyFinish(){
+  const S = G.solo, diff = G.diff, cur = G.cur.slice(), local = performance.now() - S.t0;
+  let d = null, err = '';
+  if (!S.daily.guest){
+    try {
+      const r = await fetch('/api/daily/finish', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: store.get('token'), diff, cur }) });
+      d = await r.json(); if (!r.ok){ err = d.error || 'Błąd serwera.'; d = null; }
+    } catch { err = 'Brak połączenia – wynik nie został zapisany. Otwórz zagadkę ponownie, żeby spróbować jeszcze raz.'; }
+  }
+  if (d || S.daily.guest) store.del('dp_' + S.daily.date + '_' + diff);
+  const ms = d ? d.ms : local;
+  $('resTitle').textContent = err ? 'Rozwiązane, ale…' : 'Zagadka dnia rozwiązana! 🎉'; $('resTitle').className = 'big ' + (err ? 'neutral' : 'win');
+  if (!err){ Snd('win'); confetti(); }
+  $('resSub').textContent = DIFFS[diff].label + ' · zagadka dnia' + (G.blind ? '' : ' · błędy: ' + S.errors);
+  $('resElo').textContent = fmt(ms);
+  $('resDelta').textContent = err ? err : d ? '📅 Miejsce w tabeli dnia: #' + d.rank : 'Jako gość nie trafiasz do tabeli – załóż konto.';
+  $('resDelta').className = err ? 'lose' : 'win';
+  $('rematch').classList.add('hidden'); $('reportRes').classList.add('hidden'); $('chatRes').classList.add('hidden');
+  $('again').textContent = '📅 Do zagadek dnia';
+  G = null; show('result');
+}
 function soloFinish(){
   const S = G.solo; S.done = true;
   clearInterval(timerInt);
+  if (S.daily) return dailyFinish();
   const ms = performance.now() - S.t0, key = 'best_' + G.diff;
   const prev = +store.get(key) || 0, record = !prev || ms < prev;
   if (record) store.set(key, String(Math.round(ms)));
@@ -829,7 +908,10 @@ function endMatch(m){
   clearInterval(timerInt); clearInterval(oppT); G = null; banner(''); sess.del('notes');
   me = m.user; renderMode();
   const why = {
-    solved: m.won ? 'Rozwiązałeś pierwszy' : 'Przeciwnik rozwiązał pierwszy',
+    solved: m.mode && m.mode !== 'classic'
+      ? (m.mode === 'blitz' ? (m.won ? 'Wygrałeś serię ' : 'Przegrałeś serię ') + (m.score ? m.score[0] + ':' + m.score[1] : '')
+        : (m.won ? 'Pierwszy skończyłeś: ' : 'Przeciwnik był pierwszy: ') + MODE_WIN[m.mode])
+      : m.won ? 'Rozwiązałeś pierwszy' : 'Przeciwnik rozwiązał pierwszy',
     resign: m.won ? 'Przeciwnik się poddał' : 'Poddałeś się',
     disconnect: m.won ? 'Przeciwnik się rozłączył' : 'Rozłączono na zbyt długo',
     banned: 'Przeciwnik został zablokowany'
@@ -852,7 +934,7 @@ function endMatch(m){
     }
   } else {
     $('resElo').textContent = fmt(m.ms);
-    $('resDelta').textContent = (m.friend ? 'Pojedynek ze znajomym' : 'Gra towarzyska') + ' – ranking bez zmian';
+    $('resDelta').textContent = (m.mode && m.mode !== 'classic' ? MODES[m.mode].short + (m.friend ? ' ze znajomym' : '') : m.friend ? 'Pojedynek ze znajomym' : 'Gra towarzyska') + ' – ranking bez zmian';
     $('resDelta').className = 'neutral';
   }
   if (!m.void) { if (m.won){ Snd('win'); confetti(); } else Snd('lose'); }
@@ -863,23 +945,25 @@ function endMatch(m){
 }
 
 // ---------- przyciski ----------
-function queueWith(diff, ranked){
-  if (me && me.guest) ranked = false;
-  lastPlay = { kind: 'queue', diff, ranked };
-  tx({ type:'queue', diff, ranked });
+function queueWith(diff, ranked, mode){
+  mode = mode || 'classic';
+  if ((me && me.guest) || mode !== 'classic') ranked = false;
+  lastPlay = { kind: 'queue', diff, ranked, mode };
+  tx({ type:'queue', diff, ranked, mode });
 }
-$('play').onclick = () => queueWith(curDiff, kind === 'ranked');
+$('play').onclick = () => queueWith(curDiff, kind === 'ranked', gmode);
 $('soloBtn').onclick = () => startSolo(curDiff);
-$('friendBtn').onclick = () => tx({ type:'room', diff: curDiff });
+$('friendBtn').onclick = () => tx({ type:'room', diff: curDiff, mode: gmode });
 $('cancel').onclick = () => tx({ type:'cancel' });
 $('rematch').onclick = () => tx({ type:'rematch' });
 $('again').onclick = () => {
-  if (lastPlay && lastPlay.kind === 'solo') startSolo(lastPlay.diff);
-  else if (lastPlay) queueWith(lastPlay.diff, lastPlay.ranked);
+  if (lastPlay && lastPlay.kind === 'daily') openDaily();
+  else if (lastPlay && lastPlay.kind === 'solo') startSolo(lastPlay.diff);
+  else if (lastPlay) queueWith(lastPlay.diff, lastPlay.ranked, lastPlay.mode);
 };
-$('toMenu').onclick = () => { if (!lastPlay || lastPlay.kind !== 'solo') tx({ type:'leave' }); show('menu'); loadLb(); };
+$('toMenu').onclick = () => { if (!lastPlay || (lastPlay.kind !== 'solo' && lastPlay.kind !== 'daily')) tx({ type:'leave' }); show('menu'); loadLb(); };
 $('resign').onclick = () => {
-  if (G && G.solo){ clearInterval(timerInt); G = null; show('menu'); return; }
+  if (G && G.solo){ const dl = G.solo.daily; clearInterval(timerInt); G = null; if (dl) openDaily(); else show('menu'); return; }
   if (confirm('Na pewno się poddać?')) tx({ type:'resign' });
 };
 
@@ -887,7 +971,7 @@ $('resign').onclick = () => {
 function showRoom(m){
   const link = location.origin + '/?room=' + m.code;
   $('searchTitle').textContent = 'Czekam na znajomego…';
-  $('searchSub').textContent = DIFFS[m.diff].label + ' · bez rankingu · link ważny ' + Math.round((m.ttl || 600000) / 60000) + ' min';
+  $('searchSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : '') + ' · bez rankingu · link ważny ' + Math.round((m.ttl || 600000) / 60000) + ' min';
   $('roomLink').value = link; $('roomBox').classList.remove('hidden');
   $('shareBtn').classList.toggle('hidden', !navigator.share);
   show('searching');
@@ -901,9 +985,48 @@ $('copyBtn').onclick = async () => {
 $('shareBtn').onclick = () => { navigator.share({ title: 'Sudoku Duel', text: 'Zagrajmy w Sudoku Duel!', url: $('roomLink').value }).catch(() => {}); };
 $('roomLink').onclick = e => e.target.select();
 
+// ---------- zagadka dnia ----------
+let dDiff = null, dStatus = null;
+const post = (url, body) => fetch(url, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(Object.assign({ token: store.get('token') }, body || {})) });
+async function openDaily(){
+  if (!dDiff || !DIFFS[dDiff]) dDiff = curDiff;
+  show('daily'); $('dCard').innerHTML = '<div class="info">Ładowanie…</div>';
+  try { dStatus = await (await post('/api/daily/status')).json(); } catch { dStatus = null; }
+  renderDaily(); loadDailyBoard();
+}
+function renderDaily(){
+  const st = dStatus || { done: {}, running: {} };
+  $('dSub').textContent = 'Ta sama plansza dla wszystkich, jedna próba na poziom. Nowa o północy.' + (st.guest ? ' Jako gość możesz zagrać, ale wynik nie trafi do tabeli.' : '');
+  $('dDiffSeg').innerHTML = '';
+  for (const d of Object.keys(DIFFS)){
+    const b = document.createElement('button'); b.textContent = DIFFS[d].label + (st.done[d] ? ' ✅' : ''); b.className = d === dDiff ? 'on' : '';
+    b.onclick = () => { dDiff = d; renderDaily(); loadDailyBoard(); };
+    $('dDiffSeg').appendChild(b);
+  }
+  const done = st.done[dDiff], run = st.running[dDiff];
+  $('dCard').innerHTML = done
+    ? '<div class="big win" style="font-size:26px">✅ ' + fmt(done.ms) + '</div><div class="info">Twoje miejsce dziś: #' + done.rank + '. Wróć jutro po nową zagadkę.</div>'
+    : '<div class="info">' + (run ? 'Masz rozpoczętą zagadkę – zegar cały czas liczy. ' : '') + (DIFFS[dDiff].blind ? 'Hardcore: bez sprawdzania cyfr. ' : 'Błąd = blokada ' + DIFFS[dDiff].lock / 1000 + ' s. ') + '</div><button id="dPlay">' + (run ? '▶ Kontynuuj' : '▶ Zagraj') + '</button>';
+  const pb = $('dPlay'); if (pb) pb.onclick = () => startSolo(dDiff, true);
+}
+async function loadDailyBoard(){
+  const diff = dDiff;
+  try {
+    const d = await (await fetch('/api/daily/board?diff=' + diff)).json();
+    if (diff !== dDiff) return;
+    $('dLbDiff').textContent = '· ' + DIFFS[diff].label + ' · ' + d.count + ' graczy';
+    $('dLb').innerHTML = d.top.length
+      ? '<tr><th>#</th><th>Gracz</th><th>Czas</th></tr>' + d.top.map((u, i) => '<tr><td>' + (MEDAL[i] || i + 1) + '</td><td>' + esc(u.name) + '</td><td>' + fmt(u.ms) + '</td></tr>').join('')
+      : '<tr><td class="sub">Nikt jeszcze nie rozwiązał dzisiejszej zagadki. Bądź pierwszy!</td></tr>';
+    $('dPrev').textContent = d.prev && d.prev.top.length ? 'Wczoraj: ' + d.prev.top.map((x, i) => MEDAL[i] + ' ' + x.name + ' (' + fmt(x.ms) + ')').join(' · ') : '';
+  } catch {}
+}
+$('dailyBtn').onclick = openDaily;
+$('dBack').onclick = () => { show('menu'); loadLb(); };
+
 // ---------- statystyki i historia ----------
 let prof = null, pDiff = null;
-const MODE_ICON = { ranked: '🏆', casual: '🤝', friend: '👥' };
+const MODE_ICON = { ranked: '🏆', casual: '🤝', friend: '👥', blitz: '⚡', line: '📏', sprint: '🏁' };
 function fmtMs(ms){ return ms ? fmt(ms) : '–'; }
 async function openProfile(){
   pDiff = curDiff; show('profile'); $('pStats').innerHTML = ''; $('hist').innerHTML = ''; $('chart').innerHTML = '<div class="info">Ładowanie…</div>';

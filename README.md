@@ -16,9 +16,11 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 - **Telefon / PWA:** układ dopasowany do małych ekranów i wcięć ekranu, aplikację można zainstalować (Android: przycisk w ustawieniach, iPhone: Udostępnij → Dodaj do ekranu początkowego). Bez internetu otwiera się zapisany ekran startowy, ale granie wymaga połączenia.
 - **Rangi:** Brąz 🥉 (0+), Srebro 🥈 (1100+), Złoto 🥇 (1250+), Diament 💎 (1400+), liczone osobno na każdym poziomie. Pasek postępu w menu, komunikat o awansie/spadku po meczu, ikona rangi w rankingu i przy rywalu.
 - **Sezony:** co miesiąc (czas polski) ranking się zeruje "miękko": Elo wraca w stronę 1000 (domyślnie zostaje 50% różnicy). TOP 3 na każdym poziomie (min. 5 meczów w sezonie) dostaje odznakę 🥇🥈🥉 widoczną w rankingu i w profilu. Tabela pokazuje tylko graczy, którzy grali w bieżącym sezonie.
+- **Nowe tryby (na razie bez rankingu, w kolejce towarzyskiej i ze znajomym):** ⚡ **Blitz** (3 plansze pod rząd, wygrywa ten, kto weźmie 2), 📏 **Linie** (pierwszy, kto skompletuje 3 rzędy / kolumny / bloki 3×3, liczą się te z min. 4 pustymi polami), 🏁 **Sprint** (pierwszy, kto wstawi 20 poprawnych cyfr). Wybór pod poziomami trudności. Hardcore tylko w klasycznej. Cele i progi: `BLITZ_ROUNDS`, `LINE_TARGET`, `LINE_MIN_EMPTY`, `SPRINT_TARGET` w `server.js`.
+- **Zagadka dnia (📅):** jedna plansza na każdy poziom na dobę (czas polski), taka sama dla wszystkich, jedna próba, osobna tabela czasów dla każdego poziomu i wczorajsi zwycięzcy. Czas mierzy serwer (od pierwszego pobrania planszy do wysłania poprawnego rozwiązania), więc odświeżenie strony nie resetuje zegara (rozwiązane pola wracają z pamięci przeglądarki). Wynik zapisują tylko konta, goście mogą zagrać dla zabawy. Czas niemożliwy dla człowieka (jak w grze rankingowej) jest odrzucany.
 - Konta: nick + hasło albo Google, trwała baza Postgres, powrót do meczu po odświeżeniu strony (30 s), ochrona przed botami.
 
-Statystyki, passa i wykres liczą **tylko mecze rankingowe**. Czasy: tylko z rozwiązanych plansz (nie z poddania ani rozłączenia). Historia zawiera wszystkie mecze konta (też towarzyskie i ze znajomym, z oznaczeniem trybu).
+Statystyki, passa i wykres liczą **tylko mecze rankingowe** (nowe tryby i zagadka dnia ich nie zmieniają). Czasy: tylko z rozwiązanych plansz (nie z poddania ani rozłączenia). Historia zawiera wszystkie mecze konta (też towarzyskie i ze znajomym, z oznaczeniem trybu).
 
 ## Pliki
 
@@ -66,5 +68,7 @@ npm start      # http://localhost:3000
 Progi rang: `RANKS`, minimum meczów do odznak: `SEASON_MIN_GAMES`. `DIFFS` (liczba pustych pól i długość blokady), `GRACE_MS` (czas na powrót do meczu), `HISTORY_MAX` i `ELO_LOG_MAX` (ile historii pamiętamy), progi anty-botowe `MIN_MOVE_MS`, `MIN_MS_PER_CELL`, `FLAGS_HIDE`.
 
 ## Ograniczenia anty-botowe (uczciwie)
+
+Zagadka dnia jest jednoosobowa i przeglądarka dostaje rozwiązanie (potrzebne do sprawdzania cyfr na bieżąco), więc zdeterminowana osoba może je podejrzeć. Odsiewa to tylko limit szybkości (min. 0,4 s na pole) i panel admina. Jeśli kiedyś będzie to problem, można przenieść sprawdzanie cyfr na serwer.
 
 Serwer sam sprawdza każdą cyfrę, ale bot z solverem może grać "po ludzku wolno". Odsiewamy proste boty: ruchy częstsze niż co 120 ms są ignorowane, wygrana szybsza niż 0,4 s na pole jest unieważniana (bez zmiany Elo), a konto z 3 unieważnieniami znika z rankingu. Resztą zajmują się zgłoszenia graczy i panel admina. Limity po IP są "best effort" (adres IP jest brany z nagłówka `X-Forwarded-For`).
