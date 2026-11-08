@@ -39,6 +39,28 @@ button:active:not(:disabled){transform:scale(.98)}
 .rankbox .bar{height:6px;border-radius:99px;background:var(--panel2);margin-top:6px;overflow:hidden}
 .rankbox .bar i{display:block;height:100%;background:var(--green);border-radius:99px}
 .bdg{display:inline-block;margin-right:2px}
+.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.tile{margin:0;text-align:left;padding:14px 12px;font-size:16px;background:var(--panel2);color:var(--text);line-height:1.25}
+.tile .ic{font-size:26px;display:block;margin-bottom:4px}
+.tile small{display:block;font-weight:400;font-size:12px;color:var(--muted);margin-top:3px}
+.tile:hover:not(:disabled){outline:2px solid var(--green)}
+.cnt{float:right;font-variant-numeric:tabular-nums;color:var(--muted);font-weight:800}
+#lbSeg{margin:8px 0 2px}#lbSeg button{font-size:13px;padding:8px 2px}
+#lineLayer{position:absolute;inset:0;pointer-events:none;z-index:3}
+#lineLayer i{position:absolute;display:block}
+#lineLayer i.row{width:6px;background:#3b82f6}
+#lineLayer i.col{height:6px;background:#f59e0b}
+#lineLayer i.blk{outline:3px dashed #a855f7;outline-offset:-3px}
+#lineLayer i.done{background:var(--green);outline-color:var(--green)}
+#lineLayer i.blk.done{background:rgba(129,182,76,.25)}
+#dDiffSeg{gap:10px;margin:12px 0 16px}#dDiffSeg button{padding:14px 2px;font-size:14px}
+#dCard #dPlay{margin-top:14px}
+#hGrid{display:grid;grid-template-columns:repeat(9,1fr);border:2px solid var(--b-frame);margin:12px 0 4px;aspect-ratio:1/1;background:var(--b-frame)}
+#hGrid .hc{display:flex;align-items:center;justify-content:center;background:var(--b-cell);color:var(--b-user);font-weight:600;font-size:clamp(13px,4.4vw,19px);border:.5px solid var(--b-thin)}
+#hGrid .hc.g{color:var(--b-given);font-weight:800}
+#hGrid .hc.w{background:var(--b-bad)}
+#hGrid .hc.br{border-right:2px solid var(--b-thick)}#hGrid .hc.bb{border-bottom:2px solid var(--b-thick)}
+#hist tr.hrow{cursor:pointer}#hist tr.hrow:hover td{background:var(--panel2)}
 .frow{display:flex;align-items:center;gap:8px;padding:9px 0;border-top:1px solid var(--panel2)}
 .frow:first-child{border-top:0}
 .frow .nm{flex:1;font-weight:700;overflow:hidden;text-overflow:ellipsis}
@@ -177,16 +199,37 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     </div>
 
     <div class="card">
-      <b>Tryb gry</b>
+      <b>Wybierz tryb gry</b>
+      <div class="tiles" id="tiles"></div>
+    </div>
+    <div class="card">
+      <b>🏆 Ranking TOP 20 <span id="lbDiff" style="color:var(--muted);font-weight:400"></span></b>
+      <div class="seg" id="lbSeg"></div>
+      <div class="info" id="seasonInfo" style="margin:6px 0"></div>
+      <table id="lb"><tr><td class="sub">Ładowanie…</td></tr></table>
+      <div class="info" id="prevSeason" style="margin-top:8px"></div>
+    </div>
+    <div class="card" style="color:var(--muted);font-size:14px">
+      Sterowanie: cyfry z klawiatury lub paska pod planszą, strzałki przesuwają zaznaczenie. <b>Notatki:</b> kliknij dwa razy szybko puste pole (albo przycisk ✎ / klawisz N), potem wpisuj cyfry – pojawią się jako małe notatki w polu. Odświeżenie strony w trakcie meczu nie kończy gry – masz 30 sekund na powrót.
+    </div>
+  </div>
+
+  <!-- STRONA TRYBU -->
+  <div id="mode" class="hidden">
+    <button class="sec small" id="mBack" style="width:auto;margin:0 0 6px;padding:8px 14px">← Wszystkie tryby</button>
+    <h1 id="modeTitle" style="margin-top:8px"></h1>
+    <p class="sub" id="modeInfo" style="margin-bottom:14px"></p>
+    <div class="card">
+      <b>Poziom trudności</b>
       <div class="seg" id="diffSeg"></div>
       <div class="info" id="diffInfo"></div>
-      <div class="seg wrap" id="modeSeg"></div>
-      <div class="info" id="modeInfo"></div>
-      <div class="seg" id="kindSeg">
-        <button id="kRanked">🏆 Rankingowa</button>
-        <button id="kCasual">🤝 Towarzyska</button>
+      <div id="kindWrap">
+        <div class="seg" id="kindSeg">
+          <button id="kRanked">🏆 Rankingowa</button>
+          <button id="kCasual">🤝 Towarzyska</button>
+        </div>
+        <div class="info" id="kindInfo"></div>
       </div>
-      <div class="info" id="kindInfo"></div>
       <div class="stats" id="statsBox">
         <div class="stat"><b id="elo">1000</b><small>Ranking</small></div>
         <div class="stat"><b id="wins">0</b><small>Wygrane</small></div>
@@ -198,16 +241,6 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
         <button class="sec" id="soloBtn">🧩 Solo</button>
         <button class="sec" id="friendBtn">👥 Ze znajomym</button>
       </div>
-      <button class="sec" id="dailyBtn">📅 Zagadka dnia</button>
-    </div>
-    <div class="card">
-      <b>🏆 Ranking TOP 20 <span id="lbDiff" style="color:var(--muted);font-weight:400"></span></b>
-      <div class="info" id="seasonInfo" style="margin:6px 0"></div>
-      <table id="lb"><tr><td class="sub">Ładowanie…</td></tr></table>
-      <div class="info" id="prevSeason" style="margin-top:8px"></div>
-    </div>
-    <div class="card" style="color:var(--muted);font-size:14px">
-      Sterowanie: cyfry z klawiatury lub paska pod planszą, strzałki przesuwają zaznaczenie. <b>Notatki:</b> kliknij dwa razy szybko puste pole (albo przycisk ✎ / klawisz N), potem wpisuj cyfry – pojawią się jako małe notatki w polu. Odświeżenie strony w trakcie meczu nie kończy gry – masz 30 sekund na powrót.
     </div>
   </div>
 
@@ -228,12 +261,13 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
   <!-- GRA -->
   <div id="game" class="hidden">
     <div class="bar">
-      <div class="pl"><div class="n" id="oppName"></div><div class="e" id="oppElo"></div><div class="prog opp" id="oppProg"><div id="oppBar"></div></div></div>
+      <div class="pl"><div class="n"><span id="oppName"></span><span class="cnt" id="oppCnt"></span></div><div class="e" id="oppElo"></div><div class="prog opp" id="oppProg"><div id="oppBar"></div></div></div>
       <div id="mini" class="hidden" role="button" aria-label="Podgląd przeciwnika (dotknij, aby powiększyć)"></div>
       <div id="timer">0:00</div>
     </div>
     <div id="oppnote"></div>
-    <div id="board"><div id="overlay" class="hidden"></div></div>
+    <div id="board"><div id="overlay" class="hidden"></div><div id="lineLayer"></div></div>
+    <div class="info hidden" id="lineLegend" style="text-align:center;margin-top:6px"></div>
     <div id="lock"></div>
     <div id="pad"></div>
     <div id="tools">
@@ -243,7 +277,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
       <button id="muteBtn" style="flex:0 0 54px" aria-label="Dźwięk">🔊</button>
     </div>
     <div class="bar" style="margin-top:12px">
-      <div class="pl"><div class="n">Ty</div><div class="prog"><div id="meBar"></div></div></div>
+      <div class="pl"><div class="n">Ty<span class="cnt" id="meCnt"></span></div><div class="prog"><div id="meBar"></div></div></div>
     </div>
     <div class="row">
       <button class="sec small" id="resign">Poddaj się</button>
@@ -300,6 +334,16 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 </div>
 
 <!-- ZGŁOSZENIE -->
+<div id="hbox" class="modal hidden">
+  <div class="card">
+    <b id="hTitle"></b>
+    <div class="seg" id="hSeg"><button id="hMine" class="on">Twoja plansza</button><button id="hOpp">Plansza rywala</button></div>
+    <div id="hGrid"></div>
+    <div class="info" id="hInfo"></div>
+    <button class="sec" id="hClose">Zamknij</button>
+  </div>
+</div>
+
 <div id="reportBox" class="modal hidden">
   <div class="card">
     <b>🚩 Zgłoś przeciwnika</b>
@@ -348,7 +392,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
 <script>
 const $ = id => document.getElementById(id);
-const screens = ['menu','searching','game','result','profile','daily','friends'];
+const screens = ['menu','mode','searching','game','result','profile','daily','friends'];
 function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
@@ -422,6 +466,9 @@ const MODES = {
   line:    { label: '📏 Linie',     short: '📏 Linie',  info: 'Wygrywa pierwszy, kto skompletuje 3 rzędy, kolumny lub bloki 3×3 (liczą się te z co najmniej 4 pustymi polami). Bez rankingu.' },
   sprint:  { label: '🏁 Sprint',    short: '🏁 Sprint', info: 'Wygrywa pierwszy, kto wstawi 20 poprawnych cyfr. Bez rankingu.' }
 };
+const SLUG = { classic: 'klasyczna', blitz: 'blitz', line: 'linie', sprint: 'sprint' };
+const MODE_BY_SLUG = Object.fromEntries(Object.entries(SLUG).map(([k, v]) => [v, k]));
+const TILE_SUB = { classic: 'Pierwszy, kto wypełni planszę. Ranking Elo.', blitz: '3 plansze, wygrywa 2 z 3', line: 'Skompletuj 3 linie', sprint: '20 cyfr jak najszybciej' };
 const MODE_WIN = { blitz: 'serię', line: '3 linie', sprint: '20 cyfr' };
 function renderRankInfo(s){
   const el = $('rankInfo'), i = rankIdx(s.elo), r = RANKS[i], nx = RANKS[i + 1];
@@ -443,6 +490,21 @@ function banner(t){ $('banner').textContent = t; $('banner').classList.toggle('h
 function toast(t){ const el = $('toast'); el.textContent = t; el.classList.remove('hidden'); clearTimeout(toastT); toastT = setTimeout(() => el.classList.add('hidden'), 3500); }
 function fmt(ms){ const s = Math.floor(ms/1000); return Math.floor(s/60) + ':' + String(s%60).padStart(2,'0'); }
 
+// ---------- adresy podstron ----------
+let routed = false;
+function nav(path){ if (location.pathname !== path) history.pushState(null, '', path); route(); }
+function route(){
+  if (G) return;                                              // w trakcie gry adres nie zmienia ekranu
+  const p = location.pathname.replace(/\/+$/, '') || '/', m = p.match(/^\/tryb\/([a-z]+)$/);
+  if (p === '/zagadka') return openDaily();
+  if (p === '/znajomi'){ if (me && !me.guest) return openFriends(); history.replaceState(null, '', '/'); }
+  else if (m && MODE_BY_SLUG[m[1]]){ gmode = MODE_BY_SLUG[m[1]]; store.set('gmode', gmode); renderMode(); show('mode'); return; }
+  else if (p !== '/') history.replaceState(null, '', '/');
+  show('menu'); loadLb();
+}
+addEventListener('popstate', route);
+$('mBack').onclick = () => nav('/');
+
 // ---------- połączenie ----------
 function connect(){
   ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
@@ -459,6 +521,7 @@ function tx(o){ if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); }
 function onMsg(m){
   if (m.type === 'hello'){
     store.set('token', m.token); me = m.user; renderMe(); loadLb();
+    if (!routed){ routed = true; route(); }
     if (pendingRoom){ tx({ type:'join', code: pendingRoom }); pendingRoom = null; history.replaceState(null, '', location.pathname); }
   }
   else if (m.type === 'me'){ me = m.user; renderMe(); }
@@ -477,11 +540,12 @@ function onMsg(m){
   }
   else if (m.type === 'challenge') showChallenge(m);
   else if (m.type === 'challengeGone'){ if (chalFrom === m.from) hideChal(); }
-  else if (m.type === 'idle') show('menu');
+  else if (m.type === 'idle') route();
   else if (m.type === 'match') startMatch(m);
   else if (m.type === 'ok'){
     G.cur[sel2idx(m)] = m.v; if (m.v) placed(sel2idx(m), m.v);
-    $('meBar').style.width = ((m.prog != null ? m.prog : m.filled) / (G.goal || G.empties) * 100) + '%'; render();
+    G.myP = m.prog != null ? m.prog : m.filled; setCnt();
+    $('meBar').style.width = (G.myP / (G.goal || G.empties) * 100) + '%'; render();
     if (m.v){ Snd(G.blind ? 'place' : 'ok'); afterPlace(sel2idx(m)); }
   }
   else if (m.type === 'wrong'){
@@ -489,6 +553,7 @@ function onMsg(m){
   }
   else if (m.type === 'full') toast('Plansza jest pełna, ale gdzieś jest błąd. Szukaj dalej!');
   else if (m.type === 'opp'){
+    if (G){ G.oppP = m.prog != null ? m.prog : m.filled; setCnt(); }
     $('oppBar').style.width = ((m.prog != null ? m.prog : m.filled) / (G.goal || G.empties) * 100) + '%';
     if (G && m.cell != null){ G.oppMask[m.cell] = m.on; renderMini(); }
   }
@@ -531,44 +596,59 @@ function renderMe(){
 function renderMode(){
   const special = gmode !== 'classic';
   if (special && DIFFS[curDiff].blind) curDiff = 'hard';          // Hardcore tylko w klasycznej
-  $('modeSeg').innerHTML = '';
-  for (const k of Object.keys(MODES)){
-    const b = document.createElement('button'); b.textContent = MODES[k].label; b.className = k === gmode ? 'on' : '';
-    b.onclick = () => { gmode = k; store.set('gmode', k); renderMode(); loadLb(); };
-    $('modeSeg').appendChild(b);
-  }
+  $('modeTitle').textContent = MODES[gmode].label;
   $('modeInfo').textContent = MODES[gmode].info;
   $('diffSeg').innerHTML = '';
   for (const d of Object.keys(DIFFS)){
     const b = document.createElement('button'); b.textContent = DIFFS[d].label; b.className = d === curDiff ? 'on' : '';
     if (special && DIFFS[d].blind) b.disabled = true;
-    b.onclick = () => { curDiff = d; store.set('diff', d); renderMode(); loadLb(); };
+    b.onclick = () => { curDiff = d; store.set('diff', d); renderMode(); };
     $('diffSeg').appendChild(b);
   }
   const D = DIFFS[curDiff];
   $('diffInfo').textContent = D.blind
     ? 'Trudna plansza, bez blokady i bez sprawdzania cyfr: błąd zostaje na planszy i sam musisz go znaleźć.'
-    : 'Błędna cyfra blokuje Cię na ' + D.lock + ' s.';
+    : 'Błędna cyfra blokuje Cię na ' + D.lock / 1000 + ' s.';
   const guest = !me || me.guest;
   if (guest) kind = 'casual';
   const rk = kind === 'ranked' && !special;
-  $('kRanked').disabled = guest || special;
+  $('kindWrap').classList.toggle('hidden', special);
+  $('soloBtn').classList.toggle('hidden', special);
+  $('kRanked').disabled = guest;
   $('kRanked').classList.toggle('on', rk);
   $('kCasual').classList.toggle('on', !rk);
-  $('kindInfo').textContent = special ? 'Ten tryb jest na razie bez rankingu.' : guest ? 'Gra rankingowa wymaga konta – zaloguj się.'
+  $('kindInfo').textContent = guest ? 'Gra rankingowa wymaga konta – zaloguj się.'
     : kind === 'ranked' ? 'Liczy się do rankingu Elo.' : 'Bez wpływu na ranking.';
+  $('play').textContent = special ? '⚔ Szukaj przeciwnika (bez rankingu)' : '⚔ Szukaj przeciwnika';
   $('statsBox').classList.toggle('hidden', guest || !rk);
   const s = me && me.stats[curDiff] ? me.stats[curDiff] : { elo: 1000, wins: 0, losses: 0 };
   $('elo').textContent = s.elo; $('wins').textContent = s.wins; $('losses').textContent = s.losses;
   $('rankInfo').classList.toggle('hidden', guest || !rk); if (!guest) renderRankInfo(s);
-  $('lbDiff').textContent = '· ' + D.label;
+}
+function renderTiles(){
+  const box = $('tiles'); box.innerHTML = '';
+  const tile = (ic, name, sub, fn) => { const b = document.createElement('button'); b.className = 'tile'; b.innerHTML = '<span class="ic">' + ic + '</span>' + name + '<small>' + sub + '</small>'; b.onclick = fn; box.appendChild(b); };
+  for (const k of Object.keys(MODES)){
+    const parts = MODES[k].label.split(' ');
+    tile(parts[0], parts.slice(1).join(' '), TILE_SUB[k], () => { gmode = k; store.set('gmode', k); nav('/tryb/' + SLUG[k]); });
+  }
+  tile('📅', 'Zagadka dnia', 'Jedna plansza dziennie, tabela czasów', () => nav('/zagadka'));
 }
 $('kRanked').onclick = () => { kind = 'ranked'; store.set('kind', kind); renderMode(); };
 $('kCasual').onclick = () => { kind = 'casual'; store.set('kind', kind); renderMode(); };
 
+function renderLbSeg(){
+  $('lbSeg').innerHTML = '';
+  for (const d of Object.keys(DIFFS)){
+    const b = document.createElement('button'); b.textContent = DIFFS[d].label; b.className = d === lbd ? 'on' : '';
+    b.onclick = () => { lbd = d; store.set('lbdiff', d); loadLb(); };
+    $('lbSeg').appendChild(b);
+  }
+}
 async function loadLb(){
+  renderLbSeg(); $('lbDiff').textContent = '· ' + DIFFS[lbd].label;
   try {
-    const d = await (await fetch('/api/leaderboard?diff=' + curDiff)).json();
+    const d = await (await fetch('/api/leaderboard?diff=' + lbd)).json();
     const bd = b => b ? b.map((n, k) => n ? '<span class="bdg">' + MEDAL[k] + (n > 1 ? '×' + n : '') + '</span>' : '').join('') : '';
     $('lb').innerHTML = d.length
       ? '<tr><th>#</th><th>Gracz</th><th>Elo</th><th>W/L</th></tr>' + d.map((u,i) =>
@@ -582,7 +662,7 @@ async function loadSeason(){
     const d = await (await fetch('/api/season')).json();
     const left = d.endsAt ? Math.max(0, d.endsAt - Date.now()) : 0, days = Math.floor(left / 864e5), hrs = Math.floor(left % 864e5 / 36e5);
     $('seasonInfo').textContent = 'Sezon ' + d.id + ' · do końca: ' + (days ? days + ' d ' : '') + hrs + ' h · na koniec sezonu Elo wraca ' + (d.keep >= 1 ? 'bez zmian' : d.keep <= 0 ? 'do 1000' : 'w stronę 1000 (zostaje ' + Math.round(d.keep * 100) + '% różnicy)') + ' · TOP 3 dostaje odznakę (min. ' + d.minGames + ' meczów)';
-    const pr = d.prev && d.prev.results && d.prev.results[curDiff];
+    const pr = d.prev && d.prev.results && d.prev.results[lbd];
     $('prevSeason').textContent = pr && pr.length ? 'Poprzedni sezon (' + d.prev.season + '): ' + pr.map(x => MEDAL[x.place - 1] + ' ' + x.name + ' (' + x.elo + ')').join(' · ') : '';
   } catch {}
 }
@@ -712,6 +792,11 @@ function confetti(){
   })(t0);
 }
 
+function setCnt(){
+  if (!G) return; const g = G.goal || G.empties;
+  $('meCnt').textContent = G.myP != null ? G.myP + '/' + g : '';
+  $('oppCnt').textContent = G.oppP != null ? G.oppP + '/' + g : '';
+}
 function startMatch(m){
   hideChal();
   animUntil.fill(0);
@@ -719,6 +804,8 @@ function startMatch(m){
   const mode = m.mode || 'classic';
   G = { puzzle: m.puzzle, cur: m.cur.slice(), empties: m.empties, diff: m.diff, blind: m.blind, sig, solo: null, goal: m.goal || m.empties, gmode: mode,
         oppMask: m.oppMask ? m.oppMask.slice() : new Array(81).fill(0) };
+  G.myP = m.prog != null ? m.prog : m.filled; G.oppP = m.oppProg != null ? m.oppProg : m.oppFilled;
+  if (mode === 'line') G.units = lineUnits(m.puzzle);
   notes = new Array(81).fill(0);
   try { const s = JSON.parse(sess.get('notes') || 'null'); if (s && s.sig === sig) notes = s.notes; } catch {}
   setNoteMode(false);
@@ -740,7 +827,7 @@ function startMatch(m){
   $('resign').textContent = 'Poddaj się';
   $('lock').textContent = ''; banner('');
   lastPlay = { kind: 'queue', diff: m.diff, ranked: m.ranked && !m.friend, mode };
-  render(); show('game');
+  setCnt(); render(); show('game');
   startTimer(performance.now() - m.elapsed);        // elapsed < 0 = trwa odliczanie
 }
 
@@ -759,15 +846,42 @@ function startTimer(t0){
     if (lastN !== null && !goShown){ goShown = true; ov.textContent = 'START!'; pop(); Snd('go'); setTimeout(() => ov.classList.add('hidden'), 650); }
     else if (lastN === null) ov.classList.add('hidden');
     $('timer').textContent = fmt(el);
-    if (!G || G.solo){ $('lock').textContent = ''; return; }
+    if (!G || (G.solo && !G.solo.daily)){ $('lock').textContent = ''; return; }
     const rem = lockUntil - Date.now();
     $('lock').textContent = rem > 0 ? '⛔ Blokada: ' + Math.ceil(rem/1000) + 's' : '';
   };
   tick(); timerInt = setInterval(tick, 100);
 }
 
+function lineUnits(puzzle){                                  // te same zasady co na serwerze: jednostki z co najmniej 4 pustymi polami
+  const all = [];
+  for (let k = 0; k < 9; k++){
+    all.push({ type: 'row', i: k, cells: Array.from({ length: 9 }, (_, j) => k * 9 + j) });
+    all.push({ type: 'col', i: k, cells: Array.from({ length: 9 }, (_, j) => j * 9 + k) });
+    const br = (k / 3 | 0) * 3, bc = (k % 3) * 3;
+    all.push({ type: 'blk', i: k, br, bc, cells: Array.from({ length: 9 }, (_, j) => (br + (j / 3 | 0)) * 9 + bc + (j % 3)) });
+  }
+  const open = all.filter(u => u.cells.some(c => !puzzle[c]));
+  const big = open.filter(u => u.cells.filter(c => !puzzle[c]).length >= 4);
+  return big.length >= 6 ? big : open;
+}
+function renderLineMarks(){
+  const L = $('lineLayer'), on = G && G.gmode === 'line' && G.units;
+  $('lineLegend').classList.toggle('hidden', !on);
+  if (!on){ L.innerHTML = ''; return; }
+  const q = 100 / 9;
+  L.innerHTML = G.units.map(u => {
+    const done = u.cells.every(c => G.cur[c]) ? ' done' : '';
+    const st = u.type === 'row' ? 'left:0;top:' + (u.i * q) + '%;height:' + q + '%'
+      : u.type === 'col' ? 'top:0;left:' + (u.i * q) + '%;width:' + q + '%'
+      : 'left:' + (u.bc * q) + '%;top:' + (u.br * q) + '%;width:' + (3 * q) + '%;height:' + (3 * q) + '%';
+    return '<i class="' + u.type + done + '" style="' + st + '"></i>';
+  }).join('');
+  $('lineLegend').textContent = '🟦 pasek z lewej = rząd · 🟧 pasek u góry = kolumna · 🟪 ramka = blok · liczą się tylko oznaczone, cel: ' + (G.goal) + ' (zielone = gotowe)';
+}
 function render(){
   if (!G) return;
+  renderLineMarks();
   const sv = sel >= 0 ? G.cur[sel] : 0;
   const counts = Array(10).fill(0), nowT = performance.now();
   for (let i = 0; i < 81; i++){
@@ -800,7 +914,7 @@ function place(v){
     if (G.cur[sel] === 0){ notes[sel] ^= (1 << v); saveNotes(); render(); }
     return;
   }
-  if (G.solo) return soloMove(v);
+  if (G.solo){ if (G.solo.daily && Date.now() < lockUntil) return; return soloMove(v); }
   if (Date.now() < lockUntil) return;
   if (G.blind ? G.cur[sel] === v : G.cur[sel] !== 0) return;
   tx({ type:'move', r: (sel/9)|0, c: sel%9, v });
@@ -846,10 +960,11 @@ async function startSolo(diff, daily){
   const D = DIFFS[diff];
   G = { puzzle: d.puzzle, cur: d.puzzle.slice(), empties: d.puzzle.filter(v => !v).length, diff, blind: !!D.blind,
         sig: 'solo', solo: { solution: d.solution, errors: 0, filled: 0, t0: performance.now() - (d.elapsed || 0), done: false, daily: daily ? { date: d.date, guest: !!d.guest } : null } };
-  G.goal = G.empties;
+  G.goal = G.empties; G.oppP = null;
   if (daily && !d.guest){                      // wznowienie rozpoczętej zagadki (zegar serwera cały czas płynie)
     try {
-      const sv = store.get('dp_' + d.date + '_' + diff);
+      let sv = store.get('dp_' + d.date + '_' + diff);
+      if (sv && sv[0] === '{'){ const o = JSON.parse(sv); sv = o.c; G.solo.errors = o.e | 0; }
       if (sv && sv.length === 81) for (let k = 0; k < 81; k++){ const v = +sv[k]; if (!d.puzzle[k] && v >= 0 && v <= 9 && v){ G.cur[k] = v; G.solo.filled++; } }
     } catch {}
   }
@@ -863,6 +978,7 @@ async function startSolo(diff, daily){
   $('eraseBtn').classList.toggle('hidden', !D.blind);
   $('reportGame').classList.add('hidden');
   $('resign').textContent = 'Wyjdź';
+  G.myP = G.solo.filled; setCnt();
   $('meBar').style.width = (G.solo.filled / G.empties * 100) + '%';
   render(); show('game');
   startTimer(G.solo.t0);
@@ -878,7 +994,7 @@ function soloMove(v){
     if (cur === v) return;
     S.filled += (v ? 1 : 0) - (cur ? 1 : 0);
     G.cur[sel] = v; if (v){ placed(sel, v); Snd('place'); }
-    saveDaily();
+    saveDaily(); G.myP = S.filled; setCnt();
     $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render();
     if (S.filled >= G.empties){
       if (G.cur.every((x, k) => x === S.solution[k])) soloFinish();
@@ -888,14 +1004,17 @@ function soloMove(v){
   }
   if (cur !== 0) return;
   if (v === S.solution[sel]){
-    G.cur[sel] = v; S.filled++; placed(sel, v); Snd('ok'); saveDaily();
+    G.cur[sel] = v; S.filled++; placed(sel, v); Snd('ok'); saveDaily(); G.myP = S.filled; setCnt();
     $('meBar').style.width = (S.filled / G.empties * 100) + '%'; render(); afterPlace(sel);
     if (S.filled >= G.empties) soloFinish();
-  } else { S.errors++; flash(sel); Snd('wrong'); updateSoloInfo(); }
+  } else {
+    S.errors++; flash(sel); Snd('wrong'); updateSoloInfo(); saveDaily();
+    if (S.daily && DIFFS[G.diff].lock) lockUntil = Date.now() + DIFFS[G.diff].lock;      // w zagadce dnia błąd blokuje jak w grze
+  }
 }
 function saveDaily(){
   const S = G && G.solo; if (!S || !S.daily || S.daily.guest) return;
-  store.set('dp_' + S.daily.date + '_' + G.diff, G.cur.join(''));
+  store.set('dp_' + S.daily.date + '_' + G.diff, JSON.stringify({ c: G.cur.join(''), e: S.errors }));
 }
 async function dailyFinish(){
   const S = G.solo, diff = G.diff, cur = G.cur.slice(), local = performance.now() - S.t0;
@@ -989,13 +1108,13 @@ $('friendBtn').onclick = () => tx({ type:'room', diff: curDiff, mode: gmode });
 $('cancel').onclick = () => tx({ type:'cancel' });
 $('rematch').onclick = () => tx({ type:'rematch' });
 $('again').onclick = () => {
-  if (lastPlay && lastPlay.kind === 'daily') openDaily();
+  if (lastPlay && lastPlay.kind === 'daily') nav('/zagadka');
   else if (lastPlay && lastPlay.kind === 'solo') startSolo(lastPlay.diff);
   else if (lastPlay) queueWith(lastPlay.diff, lastPlay.ranked, lastPlay.mode);
 };
-$('toMenu').onclick = () => { if (!lastPlay || (lastPlay.kind !== 'solo' && lastPlay.kind !== 'daily')) tx({ type:'leave' }); show('menu'); loadLb(); };
+$('toMenu').onclick = () => { if (!lastPlay || (lastPlay.kind !== 'solo' && lastPlay.kind !== 'daily')) tx({ type:'leave' }); route(); };
 $('resign').onclick = () => {
-  if (G && G.solo){ const dl = G.solo.daily; clearInterval(timerInt); G = null; if (dl) openDaily(); else show('menu'); return; }
+  if (G && G.solo){ const dl = G.solo.daily; clearInterval(timerInt); G = null; if (dl) openDaily(); else route(); return; }
   if (confirm('Na pewno się poddać?')) tx({ type:'resign' });
 };
 
@@ -1053,8 +1172,7 @@ async function loadDailyBoard(){
     $('dPrev').textContent = d.prev && d.prev.top.length ? 'Wczoraj: ' + d.prev.top.map((x, i) => MEDAL[i] + ' ' + x.name + ' (' + fmt(x.ms) + ')').join(' · ') : '';
   } catch {}
 }
-$('dailyBtn').onclick = openDaily;
-$('dBack').onclick = () => { show('menu'); loadLb(); };
+$('dBack').onclick = () => nav('/');
 
 // ---------- znajomi i wyzwania ----------
 let fr = { friends: [], incoming: [], outgoing: [] }, chalFrom = null, chalT = null;
@@ -1085,8 +1203,8 @@ function renderFriends(){
   fill('fOut', fr.outgoing.map(n => frRow(n, null, [['Cofnij', 'sec', () => tx({ type:'fcancel', name:n })]])), 'fOutCard');
 }
 function openFriends(){ show('friends'); tx({ type:'friends' }); renderFriends(); }
-$('frBtn').onclick = openFriends;
-$('fBack').onclick = () => { show('menu'); loadLb(); };
+$('frBtn').onclick = () => nav('/znajomi');
+$('fBack').onclick = () => nav('/');
 function sendFriendReq(){ const n = $('fName').value.trim(); if (!n) return; tx({ type:'fadd', name:n }); $('fName').value = ''; }
 $('fAdd').onclick = sendFriendReq;
 $('fName').onkeydown = e => { if (e.key === 'Enter') sendFriendReq(); };
@@ -1107,6 +1225,7 @@ $('chalNo').onclick = () => { if (chalFrom) tx({ type:'cdecline', from: chalFrom
 
 // ---------- statystyki i historia ----------
 let prof = null, pDiff = null;
+let lbd = store.get('lbdiff'); if (!DIFFS[lbd]) lbd = 'medium';
 const MODE_ICON = { ranked: '🏆', casual: '🤝', friend: '👥', blitz: '⚡', line: '📏', sprint: '🏁' };
 function fmtMs(ms){ return ms ? fmt(ms) : '–'; }
 async function openProfile(){
@@ -1115,7 +1234,7 @@ async function openProfile(){
     const r = await fetch('/api/profile', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: store.get('token') }) });
     prof = await r.json();
     if (!r.ok || prof.guest) throw 0;
-  } catch { toast('Nie udało się wczytać statystyk.'); show('menu'); return; }
+  } catch { toast('Nie udało się wczytać statystyk.'); route(); return; }
   $('pName').textContent = '· ' + prof.name;
   const gm = d => prof.stats[d].wins + prof.stats[d].losses;
   if (!gm(pDiff)) pDiff = Object.keys(DIFFS).sort((a, b) => gm(b) - gm(a))[0];   // pusty poziom -> ten, na którym grałeś najwięcej
@@ -1138,16 +1257,17 @@ function renderProfile(){
   const bl = prof.badges || [];
   $('pBadgesCard').classList.toggle('hidden', !bl.length);
   $('pBadges').innerHTML = bl.map(b => MEDAL[b.place - 1] + ' ' + (DIFFS[b.diff] ? DIFFS[b.diff].label : b.diff) + ' · sezon ' + b.season + ' · ' + b.elo + ' Elo').join('<br>');
-  const rows = prof.history.map(h => {
+  const rows = prof.history.map((h, i) => {
     const when = new Date(h.t).toLocaleString('pl-PL', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     const res = h.void ? '<span class="v">unieważn.</span>' : h.won ? '<span class="w">W</span>' : '<span class="l">P</span>';
     const why = h.reason === 'resign' ? ' 🏳' : h.reason === 'disconnect' ? ' 📡' : '';
     const d = h.void || h.delta === 0 || h.elo == null ? '–' : (h.delta > 0 ? '+' : '') + h.delta;
-    return '<tr><td>' + when + '</td><td>' + esc(h.opp) + '</td><td>' + (DIFFS[h.diff] ? DIFFS[h.diff].label : h.diff) + '</td><td>' + (MODE_ICON[h.mode] || '') + '</td><td>' + res + why + '</td><td>' + fmt(h.ms) + '</td><td>' + d + '</td></tr>';
+    return '<tr class="' + (h.puz ? 'hrow' : '') + '" data-i="' + i + '"><td>' + when + '</td><td>' + esc(h.opp) + '</td><td>' + (DIFFS[h.diff] ? DIFFS[h.diff].label : h.diff) + '</td><td>' + (MODE_ICON[h.mode] || '') + '</td><td>' + res + why + '</td><td>' + fmt(h.ms) + '</td><td>' + d + '</td></tr>';
   }).join('');
   $('hist').innerHTML = rows
     ? '<tr><th>Kiedy</th><th>Przeciwnik</th><th>Poziom</th><th></th><th>Wynik</th><th>Czas</th><th>Elo</th></tr>' + rows
     : '<tr><td class="sub">Brak rozegranych meczów.</td></tr>';
+  $('hist').querySelectorAll('tr.hrow').forEach(tr => tr.onclick = () => openHistBoard(prof.history[+tr.dataset.i]));
 }
 function drawChart(log){
   if (!log || log.length < 2){ $('chart').innerHTML = '<div class="info">Zagraj kilka meczów rankingowych na tym poziomie, a pojawi się tu wykres.</div>'; return; }
@@ -1165,8 +1285,32 @@ function drawChart(log){
     + '<g fill="#989795" font-size="10"><text x="2" y="' + (T + 8) + '">' + hi + '</text><text x="2" y="' + (H - B) + '">' + lo + '</text>'
     + '<text x="' + L + '" y="' + (H - 4) + '">' + dd(t0) + '</text><text x="' + (W - R) + '" y="' + (H - 4) + '" text-anchor="end">' + dd(t1) + '</text></g></svg>';
 }
+let hCur = null, hSide = 'mine';
+function openHistBoard(h){
+  hCur = h; hSide = 'mine';
+  const res = h.void ? 'unieważniony' : h.won ? 'wygrana' : 'przegrana';
+  $('hTitle').textContent = (DIFFS[h.diff] ? DIFFS[h.diff].label : h.diff) + ' · ' + res + ' · vs ' + h.opp;
+  $('hbox').classList.remove('hidden'); drawHistBoard();
+}
+function drawHistBoard(){
+  const h = hCur; if (!h) return;
+  $('hMine').classList.toggle('on', hSide === 'mine'); $('hOpp').classList.toggle('on', hSide === 'opp');
+  const str = hSide === 'mine' ? h.mine : h.theirs; let n = 0, wrong = 0, html = '';
+  for (let i = 0; i < 81; i++){
+    const v = +str[i], g = +h.puz[i], r = (i / 9) | 0, c = i % 9;
+    let cls = 'hc' + (c === 2 || c === 5 ? ' br' : '') + (r === 2 || r === 5 ? ' bb' : '');
+    if (g) cls += ' g'; else if (v){ n++; if (v !== +h.sol[i]){ cls += ' w'; wrong++; } }
+    html += '<div class="' + cls + '">' + (v || '') + '</div>';
+  }
+  const total = [...h.puz].filter(x => x === '0').length;
+  $('hGrid').innerHTML = html;
+  $('hInfo').textContent = 'Wstawione pola: ' + n + ' z ' + total + (wrong ? ' · błędne (na czerwono): ' + wrong : '') + ' · czas meczu ' + fmt(h.ms);
+}
+$('hMine').onclick = () => { hSide = 'mine'; drawHistBoard(); };
+$('hOpp').onclick = () => { hSide = 'opp'; drawHistBoard(); };
+$('hClose').onclick = () => $('hbox').classList.add('hidden');
 $('profBtn').onclick = openProfile;
-$('pBack').onclick = () => { show('menu'); loadLb(); };
+$('pBack').onclick = () => route();
 
 // ---------- zgłaszanie graczy ----------
 let repReason = null;
@@ -1282,7 +1426,7 @@ if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol))
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
 // ---------- start ----------
-renderMode();
+renderTiles(); renderMode(); renderLbSeg();
 fetch('/api/config').then(r => r.json()).then(c => {
   cfg = c; if (Array.isArray(c.ranks) && c.ranks.length) { RANKS = c.ranks; renderMode(); }
   if (c.googleClientId) loadScript('https://accounts.google.com/gsi/client', () => { googleReady = true; });

@@ -19,6 +19,9 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 - **Nowe tryby (na razie bez rankingu, w kolejce towarzyskiej i ze znajomym):** ⚡ **Blitz** (3 plansze pod rząd, wygrywa ten, kto weźmie 2), 📏 **Linie** (pierwszy, kto skompletuje 3 rzędy / kolumny / bloki 3×3, liczą się te z min. 4 pustymi polami), 🏁 **Sprint** (pierwszy, kto wstawi 20 poprawnych cyfr). Wybór pod poziomami trudności. Hardcore tylko w klasycznej. Cele i progi: `BLITZ_ROUNDS`, `LINE_TARGET`, `LINE_MIN_EMPTY`, `SPRINT_TARGET` w `server.js`.
 - **Zagadka dnia (📅):** jedna plansza na każdy poziom na dobę (czas polski), taka sama dla wszystkich, jedna próba, osobna tabela czasów dla każdego poziomu i wczorajsi zwycięzcy. Czas mierzy serwer (od pierwszego pobrania planszy do wysłania poprawnego rozwiązania), więc odświeżenie strony nie resetuje zegara (rozwiązane pola wracają z pamięci przeglądarki). Wynik zapisują tylko konta, goście mogą zagrać dla zabawy. Czas niemożliwy dla człowieka (jak w grze rankingowej) jest odrzucany.
 - **Znajomi i wyzwania (👥):** lista znajomych po nicku (tylko konta). Zaproszenie trzeba zaakceptować (można je odrzucić albo cofnąć, a wzajemne zaproszenia łączą od razu). Przy znajomych widać status: online, w grze, offline. Przycisk **Wyzwij** wysyła wyzwanie na wybrany w menu poziom i tryb. Wyzwany dostaje okienko z 60 s na odpowiedź, mecz jest bez rankingu. Limity: 50 znajomych, 20 oczekujących zaproszeń, antyspamowe limity zaproszeń i wyzwań.
+- **Strony trybów:** menu główne to kafelki, a każdy tryb ma własną stronę z adresem (`/tryb/klasyczna`, `/tryb/blitz`, `/tryb/linie`, `/tryb/sprint`, ponadto `/zagadka` i `/znajomi`). Poziom trudności, rankingowa/towarzyska, solo i gra ze znajomym wybierasz na stronie trybu. Przycisk „wstecz" w przeglądarce działa.
+- **Liczniki w meczu:** przy nicku rywala i przy „Ty" widać postęp (np. `7/20`). W trybie **Linie** oznaczone są rzędy (niebieski pasek z lewej), kolumny (pomarańczowy u góry) i bloki (fioletowa ramka), które się liczą; ukończone robią się zielone.
+- **Podgląd plansz z historii:** kliknij mecz w „Moje statystyki", żeby zobaczyć końcową planszę swoją i rywala (błędne cyfry na czerwono). Dotyczy meczów rozegranych po tej aktualizacji.
 - Konta: nick + hasło albo Google, trwała baza Postgres, powrót do meczu po odświeżeniu strony (30 s), ochrona przed botami.
 
 Statystyki, passa i wykres liczą **tylko mecze rankingowe** (nowe tryby i zagadka dnia ich nie zmieniają). Czasy: tylko z rozwiązanych plansz (nie z poddania ani rozłączenia). Historia zawiera wszystkie mecze konta (też towarzyskie i ze znajomym, z oznaczeniem trybu).
@@ -69,6 +72,8 @@ npm start      # http://localhost:3000
 Progi rang: `RANKS`, minimum meczów do odznak: `SEASON_MIN_GAMES`. `DIFFS` (liczba pustych pól i długość blokady), `GRACE_MS` (czas na powrót do meczu), `HISTORY_MAX` i `ELO_LOG_MAX` (ile historii pamiętamy), progi anty-botowe `MIN_MOVE_MS`, `MIN_MS_PER_CELL`, `FLAGS_HIDE`.
 
 ## Ograniczenia anty-botowe (uczciwie)
+
+W zagadce dnia błąd blokuje planszę tak jak w grze (czas blokady zależy od poziomu), a liczba błędów i wpisane cyfry wracają po wyjściu i powrocie.
 
 Zagadka dnia jest jednoosobowa i przeglądarka dostaje rozwiązanie (potrzebne do sprawdzania cyfr na bieżąco), więc zdeterminowana osoba może je podejrzeć. Odsiewa to tylko limit szybkości (min. 0,4 s na pole) i panel admina. Jeśli kiedyś będzie to problem, można przenieść sprawdzanie cyfr na serwer.
 

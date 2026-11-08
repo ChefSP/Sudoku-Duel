@@ -321,6 +321,9 @@ app.use('/api', (req, res, next) => {              // zablokowany adres IP nie k
   next();
 });
 
+// ładne adresy podstron gry (aplikacja sama rozpoznaje je po adresie)
+app.get(['/tryb/:mode', '/zagadka', '/znajomi'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
 app.get('/api/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null, ranks: RANKS,
              diffs: Object.fromEntries(Object.entries(DIFFS).map(([k, v]) => [k, { label: v.label, lock: v.lock, blind: !!v.blind }])) });
@@ -828,8 +831,9 @@ function endGame(g, winnerIdx, reason, opts = {}) {
     pushElo(wu, diff, ws_.elo, at); pushElo(lu, diff, ls_.elo, at);
   }
   const eloAfter = u => (g.ranked && !voided) ? u.stats[diff].elo : null;
-  logHistory(wu, { t: at, opp: lu.name, diff, mode, won: true, reason, ms, delta: wDelta, elo: eloAfter(wu), void: voided });
-  logHistory(lu, { t: at, opp: wu.name, diff, mode, won: false, reason, ms, delta: lDelta, elo: eloAfter(lu), void: voided });
+  const boards = i => ({ puz: g.puzzle.join(''), sol: g.solution.join(''), mine: g.cur[i].join(''), theirs: g.cur[1 - i].join('') });   // do podglądu planszy z historii
+  logHistory(wu, { t: at, opp: lu.name, diff, mode, won: true, reason, ms, delta: wDelta, elo: eloAfter(wu), void: voided, ...boards(winnerIdx) });
+  logHistory(lu, { t: at, opp: wu.name, diff, mode, won: false, reason, ms, delta: lDelta, elo: eloAfter(lu), void: voided, ...boards(1 - winnerIdx) });
   saveU(wu); saveU(lu);
 
   const base = { type: 'result', reason, ms, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, void: voided };
