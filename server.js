@@ -12,6 +12,7 @@ const DATABASE_URL = process.env.DATABASE_URL || '';           // Postgres (Neon
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';    // logowanie Google (opcjonalne)
 const TURNSTILE_SITE_KEY = process.env.TURNSTILE_SITE_KEY || ''; // captcha Cloudflare (opcjonalna)
 const TURNSTILE_SECRET = process.env.TURNSTILE_SECRET || '';
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD || '';        // hasło do panelu /owner.html (właściciel: wszystko, co admin + dodatki)
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';        // hasło do panelu /admin.html (bez niego panel jest wyłączony)
 
 const DIFFS = {
@@ -27,7 +28,6 @@ const secsOf = v => RUSH_SECS.includes(+v) ? +v : 60;
 const queueKey = (mode, ranked, secs) => ranked ? 'ranked' : mode === 'classic' ? 'casual' : mode === 'rush' ? 'rush' + secs : mode;
 const BLITZ_ROUNDS = 3;           // Blitz: 3 plansze pod rząd, wygrywa ten, kto weźmie więcej (2 wygrane kończą serię)
 const LINE_TARGET = 3;            // Linie: wygrywa pierwszy, kto skompletuje tyle rzędów / kolumn / bloków 3x3
-const LINE_MIN_EMPTY = 4;         // do Linii liczą się tylko rzędy/kolumny/bloki z co najmniej tyloma pustymi polami
 const SPRINT_TARGET = 20;         // Sprint: wygrywa pierwszy, kto wstawi tyle poprawnych cyfr
 const ROOM_TTL_MS = 10 * 60e3;    // jak długo ważny jest link do znajomego
 const ROOM_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -326,17 +326,18 @@ function pub(u) {
 // ================= HTTP =================
 const app = express();
 app.disable('x-powered-by');
+app.use('/api/owner', express.json({ limit: '64kb' }));
 app.use(express.json({ limit: '8kb' }));
 app.use(express.static(path.join(__dirname, 'public'), {
   setHeaders: (res, f) => { if (f.endsWith('sw.js') || f.endsWith('.webmanifest')) res.setHeader('Cache-Control', 'no-cache'); }   // service worker i manifest zawsze świeże
 }));
 app.use('/api', (req, res, next) => {              // zablokowany adres IP nie korzysta z API (poza panelem admina)
-  if (!req.path.startsWith('/admin') && ipBanned(ipOf(req))) return res.status(403).json({ error: 'Ten adres IP został zablokowany.' });
+  if (!req.path.startsWith('/admin') && !req.path.startsWith('/owner') && ipBanned(ipOf(req))) return res.status(403).json({ error: 'Ten adres IP został zablokowany.' });
   next();
 });
 
 // ładne adresy podstron gry (aplikacja sama rozpoznaje je po adresie)
-app.get(['/tryb/:mode', '/zagadka', '/znajomi', '/zasady', '/zglos'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get(['/tryb/:mode', '/zagadka', '/znajomi', '/zasady', '/zglos', '/zmiany'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ---------- pomysły i błędy (z opcjonalnym zrzutem ekranu lub krótkim wideo) ----------
 const FEEDBACK_KINDS = ['bug', 'idea', 'other'], FEEDBACK_MAX = 500, IMG_MAX = 2.5e6, VID_MAX = 10e6, MEDIA_TOTAL_MAX = 150e6;
@@ -415,6 +416,112 @@ app.post('/api/admin/feedback/delete', async (req, res) => {
 setInterval(() => {                                            // sprzątanie: 45 dni (załatwione: 7 dni)
   for (const f of [...feedback.values()]) { const age = Date.now() - f.at; if (age > 45 * 86400e3 || (f.status === 'done' && age > 7 * 86400e3)) dropFeedback(f); }
 }, 3600e3).unref();
+
+
+// ================= PANEL WŁAŚCICIELA, ZMIANY, TEKSTY =================
+const DEFAULT_CHANGELOG = [
+  { v: '9.0', date: '2026-11-08', title: 'Zmiany, panel właściciela', items: ['Nowa zakładka „Co nowego” z listą zmian.', 'W trybie Linie liczy się każdy rząd, kolumna i blok – bez dodatkowych obramowań na planszy.', 'Panel właściciela i bezpieczniejszy panel admina.'] },
+  { v: '8.0', date: '2026-11-08', title: 'Jak grać i zgłoszenia', items: ['Strona „Jak grać” z krótką lekcją sudoku.', 'Formularz „Pomysł / błąd” ze zrzutem ekranu lub wideo do 30 s.', 'Kary czasowe, ostrzeżenia i ogłoszenia od moderacji.'] },
+  { v: '7.0', date: '', title: 'Na czas i bot', items: ['Tryb „Na czas” (30 s – 5 min): kto ułoży więcej plansz.', 'Gra z botem na kilku poziomach.'] },
+  { v: '6.0', date: '', title: 'Strony trybów', items: ['Każdy tryb ma własną stronę i adres.', 'Liczniki wypełnionych pól w Sprincie, poprawki Zagadki dnia, podgląd końcowej planszy w historii.'] },
+  { v: '5.0', date: '', title: 'Znajomi', items: ['Lista znajomych, zaproszenia i wyzwania na pojedynek.'] },
+  { v: '4.0', date: '', title: 'Nowe tryby', items: ['Blitz, Linie i Sprint oraz Zagadka dnia.'] },
+  { v: '3.0', date: '', title: 'Rangi i sezony', items: ['Rangi z ikonami: Brąz, Srebro, Złoto, Diament.', 'Miesięczne sezony i odznaki dla TOP 3.'] },
+  { v: '2.0', date: '', title: 'Wygląd i dźwięk', items: ['Motywy, animacje, dźwięki, aplikacja PWA, emotki i podgląd planszy rywala.'] },
+  { v: '1.0', date: '', title: 'Start', items: ['Pojedynki 1 na 1, konta, ranking Elo, poziomy trudności i Hardcore.'] }
+];
+const clip = (x, n) => String(x == null ? '' : x).replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ').trim().slice(0, n);
+app.get('/api/changelog', (req, res) => res.json(meta.changelog || DEFAULT_CHANGELOG));
+app.get('/api/texts', (req, res) => res.json(meta.texts || {}));
+app.post('/api/owner/changelog', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const a = Array.isArray((req.body || {}).entries) ? req.body.entries.slice(0, 60) : null;
+  if (!a) return res.status(400).json({ error: 'Zły format.' });
+  meta.changelog = a.map(e => ({ v: clip(e.v, 12), date: clip(e.date, 12), title: clip(e.title, 80),
+    items: (Array.isArray(e.items) ? e.items : []).slice(0, 12).map(x => clip(x, 200)).filter(Boolean) })).filter(e => e.title);
+  audit(req, 'changelog', meta.changelog.length + ' wpisów'); res.json(meta.changelog);
+});
+app.post('/api/owner/texts', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const b = req.body || {}, t = { hub: clip(b.hub, 200), modes: {} };
+  for (const m of MODES) { const x = clip((b.modes || {})[m], 400); if (x) t.modes[m] = x; }
+  meta.texts = t; audit(req, 'texts', 'zmiana opisów'); res.json(t);
+});
+app.get('/api/owner/audit', (req, res) => { if (ownerAuth(req, res)) res.json((meta.audit || []).slice().reverse()); });
+function liveGames() {
+  const set = new Set();
+  for (const p of players.values()) if (p.game && !p.game.over) set.add(p.game);
+  return [...set];
+}
+app.get('/api/owner/live', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  res.json(liveGames().map(g => ({ id: g.id, mode: modeOf(g), diff: g.diff, ranked: g.ranked, names: g.players.map(p => p.user.name), bot: !!g.bot,
+    prog: g.prog, goal: g.goal, since: g.t0 })));
+});
+app.get('/api/owner/live/:id', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const g = liveGames().find(x => x.id === req.params.id);
+  if (!g) return res.status(404).json({ error: 'Ten mecz już się skończył.' });
+  res.json({ id: g.id, mode: modeOf(g), diff: g.diff, names: g.players.map(p => p.user.name), puzzle: g.puzzle.join(''), solution: g.solution.join(''),
+    cur: g.cur.map(c => c.join('')), prog: g.prog, goal: g.goal, score: g.score, round: g.round, elapsed: Date.now() - g.t0 });
+});
+app.post('/api/owner/message', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const u = users.get(String((req.body || {}).userId || '')), text = clip(req.body.text, 300), p = u && players.get(u.id);
+  if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  if (!text) return res.status(400).json({ error: 'Wpisz wiadomość.' });
+  if (!p || !p.ws) return res.status(409).json({ error: 'Gracz jest offline. Użyj ostrzeżenia – zobaczy je po wejściu.' });
+  notice(p, '📩 Wiadomość od właściciela: ' + text); audit(req, 'message', u.name + ': ' + text); res.json({ ok: true });
+});
+app.get('/api/owner/player', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const id = nameIndex.get(String(req.query.name || '').toLowerCase()), u = id && users.get(id);
+  if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  const p = players.get(u.id), g = p && p.game && !p.game.over ? p.game : null;
+  res.json({ id: u.id, name: u.name, guest: isGuest(u), google: !!u.google, createdAt: u.createdAt, lastSeen: u.lastSeen, flags: u.flags,
+    online: !!(p && p.ws), liveGame: g ? g.id : null, banned: !!userBanned(u.id), friends: (u.friends || []).length, badges: u.badges.length,
+    stats: Object.fromEntries(Object.entries(u.stats).map(([d, x]) => [d, { elo: x.elo, wins: x.wins, losses: x.losses, sgames: x.sgames }])),
+    history: u.history.slice(-30).reverse() });
+});
+app.post('/api/owner/elo', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const u = users.get(String((req.body || {}).userId || '')), d = String(req.body.diff || ''), elo = Math.round(+req.body.elo);
+  if (!u || !DIFFS[d] || !(elo >= 100 && elo <= 4000)) return res.status(400).json({ error: 'Zły gracz, poziom lub Elo (100–4000).' });
+  u.stats[d].elo = elo; pushElo(u, d, elo, Date.now()); saveU(u);
+  const p = players.get(u.id); if (p && p.ws) sendP(p, { type: 'me', user: pub(u) });
+  audit(req, 'elo', u.name + ' ' + d + ' → ' + elo); res.json({ ok: true });
+});
+app.post('/api/owner/delete_user', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const u = users.get(String((req.body || {}).userId || ''));
+  if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  if (String(req.body.confirm || '').toLowerCase() !== u.name.toLowerCase()) return res.status(400).json({ error: 'Wpisz nick gracza, aby potwierdzić.' });
+  const p = players.get(u.id);
+  if (p) { if (p.game && !p.game.over) endGame(p.game, 1 - p.idx, 'banned', { void: true }); if (p.ws) { try { p.ws.close(4004, 'deleted'); } catch {} } }
+  users.delete(u.id); u.sessions.forEach(x => sessionIndex.delete(x)); if (nameIndex.get(u.name.toLowerCase()) === u.id) nameIndex.delete(u.name.toLowerCase());
+  for (const o of users.values()) { // sprzątanie znajomych
+    for (const k of ['friends', 'fin', 'fout']) if (Array.isArray(o[k]) && o[k].includes(u.id)) { o[k] = o[k].filter(x => x !== u.id); saveU(o); }
+  }
+  removeU(u); audit(req, 'delete_user', u.name); res.json({ ok: true });
+});
+app.post('/api/owner/reset_ranking', (req, res) => {
+  if (!ownerAuth(req, res)) return;
+  const b = req.body || {}, diffs = b.diff === 'all' ? Object.keys(DIFFS) : DIFFS[b.diff] ? [b.diff] : null;
+  if (!diffs) return res.status(400).json({ error: 'Wybierz poziom lub „all”.' });
+  if (b.confirm !== 'RESET') return res.status(400).json({ error: 'Wpisz RESET, aby potwierdzić.' });
+  const now = Date.now(), results = {};
+  for (const d of diffs) results[d] = [...users.values()].filter(u => !isGuest(u) && u.stats[d].sgames > 0).sort((x, y) => y.stats[d].elo - x.stats[d].elo).slice(0, 3).map((u, k) => ({ place: k + 1, name: u.name, elo: u.stats[d].elo }));
+  meta.history.push({ season: (meta.season || '?') + ' (reset ręczny)', results }); meta.history = meta.history.slice(-12);
+  for (const u of users.values()) {
+    if (isGuest(u)) continue;
+    for (const d of diffs) { const st = u.stats[d]; if (st.elo !== 1000) pushElo(u, d, 1000, now); st.elo = 1000; st.sgames = 0; }
+    saveU(u);
+  }
+  store.save('meta', meta);
+  for (const p of players.values()) if (p.ws) { sendP(p, { type: 'me', user: pub(p.user) }); notice(p, 'Ranking został zresetowany przez właściciela.'); }
+  audit(req, 'reset_ranking', diffs.join(',')); res.json({ ok: true, diffs });
+});
+app.get('/api/admin/user_basic', (req, res) => { if (adminAuth(req, res)) res.json({ ok: true }); });
 
 app.get('/api/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null, ranks: RANKS,
@@ -768,7 +875,7 @@ function startGame(p0, p1, diff, opts = {}) {
   const cfg = DIFFS[diff];
   const mode = MODES.includes(opts.mode) ? opts.mode : 'classic';
   const game = {
-    diff, mode, ranked: mode === 'classic' && !!opts.ranked, friend: !!opts.friend, blind: !!cfg.blind, lockMs: cfg.lock,
+    id: crypto.randomUUID().slice(0, 8), diff, mode, ranked: mode === 'classic' && !!opts.ranked, friend: !!opts.friend, blind: !!cfg.blind, lockMs: cfg.lock,
     players: [p0, p1], round: 1, score: [0, 0], over: false, t0: Date.now() + COUNTDOWN_MS,
     secs: mode === 'rush' ? secsOf(opts.secs) : 0
   };
@@ -812,8 +919,7 @@ function setupBoard(g) {                                   // nowa plansza (star
   g.filled = [0, 0]; g.prog = [0, 0]; g.lockedUntil = [0, 0]; g.lastMove = [0, 0];
   g.startAt = g.round === 1 ? g.t0 : Date.now() + COUNTDOWN_MS;
   const open = UNITS.filter(u => u.some(k => !puzzle[k]));
-  const big = open.filter(u => u.filter(k => !puzzle[k]).length >= LINE_MIN_EMPTY);
-  g.units = big.length >= LINE_TARGET * 2 ? big : open;     // liczą się linie, w których jest co robić (min. LINE_MIN_EMPTY pustych pól)
+  g.units = open;                                           // liczy się każdy rząd / kolumna / blok, w którym było co wpisać
   g.goal = g.mode === 'sprint' ? Math.min(SPRINT_TARGET, g.empties) : g.mode === 'line' ? Math.min(LINE_TARGET, g.units.length) : g.empties;
 }
 function progressOf(g, i) {
@@ -1060,15 +1166,28 @@ app.post('/api/profile', (req, res) => {
 });
 
 // ---------- panel admina ----------
-function adminAuth(req, res) {
-  if (!ADMIN_PASSWORD) { res.status(404).json({ error: 'Panel admina jest wyłączony (brak ADMIN_PASSWORD).' }); return false; }
+function roleOf(req) {
+  const h = x => Buffer.from(sha(x)), k = h(req.headers['x-admin-key'] || '');
+  if (OWNER_PASSWORD && crypto.timingSafeEqual(k, h(OWNER_PASSWORD))) return 'owner';
+  if (ADMIN_PASSWORD && crypto.timingSafeEqual(k, h(ADMIN_PASSWORD))) return 'admin';
+  return null;
+}
+function adminAuth(req, res, needOwner) {
+  if (!ADMIN_PASSWORD && !OWNER_PASSWORD) { res.status(404).json({ error: 'Panel jest wyłączony (brak ADMIN_PASSWORD).' }); return false; }
   const ip = ipOf(req), key = 'adminfail:' + ip;
   const fails = (hits.get(key) || []).filter(t => Date.now() - t < 600e3);
   if (fails.length >= 10) { res.status(429).json({ error: 'Za dużo błędnych prób, spróbuj za kilka minut.' }); return false; }
-  const a = crypto.createHash('sha256').update(String(req.headers['x-admin-key'] || '')).digest();
-  const b = crypto.createHash('sha256').update(ADMIN_PASSWORD).digest();
-  if (!crypto.timingSafeEqual(a, b)) { fails.push(Date.now()); hits.set(key, fails); res.status(401).json({ error: 'Zły klucz.' }); return false; }
-  return true;
+  const role = roleOf(req);
+  if (!role) { fails.push(Date.now()); hits.set(key, fails); res.status(401).json({ error: 'Zły klucz.' }); return false; }
+  if (needOwner && role !== 'owner') { res.status(403).json({ error: 'Ta opcja jest tylko dla właściciela.' }); return false; }
+  req.role = role; return true;
+}
+const ownerAuth = (req, res) => adminAuth(req, res, true);
+function audit(req, action, detail) {                          // dziennik działań moderacji (ostatnie 200)
+  if (!meta.audit) meta.audit = [];
+  meta.audit.push({ at: Date.now(), role: req.role || '?', action, detail: String(detail || '').slice(0, 200) });
+  if (meta.audit.length > 200) meta.audit.splice(0, meta.audit.length - 200);
+  store.save('meta', meta);
 }
 function banView(b) { return { id: b.id, type: b.type, value: b.type === 'user' ? '' : b.value, name: b.name, reason: b.reason, at: b.at, until: b.until || null }; }
 function adminOverview() {
@@ -1115,15 +1234,18 @@ app.post('/api/admin/ban', (req, res) => {
     if (!u && req.body.name) u = users.get(nameIndex.get(String(req.body.name).toLowerCase()));
     if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
     if (userBanned(u.id)) return res.status(409).json({ error: 'Ten gracz jest już zablokowany.' });
-    const hrs = Math.min(Math.max(+req.body.hours || 0, 0), 24 * 365);
+    let hrs = Math.min(Math.max(+req.body.hours || 0, 0), 24 * 365);
+    if (req.role !== 'owner') hrs = Math.min(hrs || 720, 720);                       // admin: maks. 30 dni, bez blokad na stałe
     ban = { id: crypto.randomUUID(), type: 'user', value: u.id, name: u.name, reason: why, at: Date.now(), until: hrs ? Date.now() + hrs * 3600e3 : null };
   } else if (type === 'ip') {
     const ip = String(req.body.ip || '').trim().slice(0, 64);
     if (!ip) return res.status(400).json({ error: 'Brak adresu IP.' });
-    const hrs = Math.min(Math.max(+req.body.hours || (+req.body.days || 7) * 24, 1), 24 * 365);
+    let hrs = Math.min(Math.max(+req.body.hours || (+req.body.days || 7) * 24, 1), 24 * 365);
+    if (req.role !== 'owner') hrs = Math.min(hrs, 720);
     ban = { id: crypto.randomUUID(), type: 'ip', value: ip, name: ip, reason: why, at: Date.now(), until: Date.now() + hrs * 3600e3 };
   } else return res.status(400).json({ error: 'Zły typ blokady.' });
   indexBan(ban); store.save('bans', ban);
+  audit(req, 'ban', ban.type + ' ' + ban.name + ' ' + (ban.until ? 'do ' + new Date(ban.until).toISOString().slice(0, 16) : 'na stałe') + ' – ' + ban.reason);
   if (ban.type === 'user') {
     for (const r of reports.values()) if (r.target.id === ban.value && r.status === 'open') { r.status = 'actioned'; store.save('reports', r); }
     kickUser(ban.value);
@@ -1132,8 +1254,9 @@ app.post('/api/admin/ban', (req, res) => {
   }
   res.json(adminOverview());
 });
+app.get('/api/admin/whoami', (req, res) => { if (adminAuth(req, res)) res.json({ role: req.role }); });
 app.get('/api/admin/stats', (req, res) => {
-  if (!adminAuth(req, res)) return;
+  if (!ownerAuth(req, res)) return;
   const now = Date.now(); let reg = 0, guests = 0, a24 = 0, a7 = 0;
   for (const u of users.values()) { if (isGuest(u)) guests++; else reg++; if (now - u.lastSeen < 86400e3) a24++; if (now - u.lastSeen < 7 * 86400e3) a7++; }
   const live = [...players.values()].filter(q => q.ws), games = new Set(live.filter(q => q.game && !q.game.over).map(q => q.game));
@@ -1150,7 +1273,7 @@ app.post('/api/admin/warn', (req, res) => {
   const text = String(req.body.text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 300);
   if (!u || isGuest(u) && false) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
   if (!text) return res.status(400).json({ error: 'Wpisz treść ostrzeżenia.' });
-  u.warning = { text, at: Date.now() }; saveU(u);
+  u.warning = { text, at: Date.now() }; saveU(u); audit(req, 'warn', u.name + ': ' + text);
   for (const r of reports.values()) if (r.target.id === u.id && r.status === 'open') { r.status = 'actioned'; store.save('reports', r); }
   const q = players.get(u.id); if (q && q.ws) sendP(q, { type: 'warning', text });
   res.json(adminOverview());
@@ -1159,10 +1282,10 @@ app.post('/api/admin/flags', (req, res) => {
   if (!adminAuth(req, res)) return;
   const u = users.get(String(req.body.userId || ''));
   if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
-  u.flags = 0; saveU(u); res.json({ ok: true });
+  u.flags = 0; saveU(u); audit(req, 'flags', u.name); res.json({ ok: true });
 });
 app.post('/api/admin/announce', (req, res) => {
-  if (!adminAuth(req, res)) return;
+  if (!ownerAuth(req, res)) return;
   const text = String(req.body.text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
   const mins = Math.min(Math.max(+req.body.minutes || 60, 1), 1440);
   meta.announce = text ? { text, until: Date.now() + mins * 60e3 } : null;
@@ -1172,6 +1295,7 @@ app.post('/api/admin/announce', (req, res) => {
 });
 app.post('/api/admin/unban', (req, res) => {
   if (!adminAuth(req, res)) return;
+  audit(req, 'unban', String((req.body || {}).id || ''));
   const b = banById.get(String((req.body || {}).id || ''));
   if (b) { unindexBan(b); store.remove('bans', b); }
   res.json(adminOverview());

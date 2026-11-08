@@ -4,6 +4,8 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 
 ## Funkcje
 
+- Zakładka **Co nowego** (`/zmiany`) z listą zmian, edytowaną z panelu właściciela.
+
 - Strona **Jak grać** (`/zasady`) i formularz **Pomysł / błąd** (`/zglos`) ze zrzutem ekranu lub krótkim wideo.
 
 - **Poziomy:** Łatwy (blokada 2 s po błędzie), Średni (4 s), Trudny (10 s) oraz **Hardcore** (plansza z trudnego, bez blokady i bez sprawdzania cyfr: błąd zostaje na planszy, wygrywa pierwszy z całą poprawną planszą).
@@ -18,11 +20,11 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 - **Telefon / PWA:** układ dopasowany do małych ekranów i wcięć ekranu, aplikację można zainstalować (Android: przycisk w ustawieniach, iPhone: Udostępnij → Dodaj do ekranu początkowego). Bez internetu otwiera się zapisany ekran startowy, ale granie wymaga połączenia.
 - **Rangi:** Brąz 🥉 (0+), Srebro 🥈 (1100+), Złoto 🥇 (1250+), Diament 💎 (1400+), liczone osobno na każdym poziomie. Pasek postępu w menu, komunikat o awansie/spadku po meczu, ikona rangi w rankingu i przy rywalu.
 - **Sezony:** co miesiąc (czas polski) ranking się zeruje "miękko": Elo wraca w stronę 1000 (domyślnie zostaje 50% różnicy). TOP 3 na każdym poziomie (min. 5 meczów w sezonie) dostaje odznakę 🥇🥈🥉 widoczną w rankingu i w profilu. Tabela pokazuje tylko graczy, którzy grali w bieżącym sezonie.
-- **Nowe tryby (na razie bez rankingu, w kolejce towarzyskiej i ze znajomym):** ⚡ **Blitz** (3 plansze pod rząd, wygrywa ten, kto weźmie 2), 📏 **Linie** (pierwszy, kto skompletuje 3 rzędy / kolumny / bloki 3×3, liczą się te z min. 4 pustymi polami), 🏁 **Sprint** (pierwszy, kto wstawi 20 poprawnych cyfr). Wybór pod poziomami trudności. Hardcore tylko w klasycznej. Cele i progi: `BLITZ_ROUNDS`, `LINE_TARGET`, `LINE_MIN_EMPTY`, `SPRINT_TARGET` w `server.js`.
+- **Nowe tryby (na razie bez rankingu, w kolejce towarzyskiej i ze znajomym):** ⚡ **Blitz** (3 plansze pod rząd, wygrywa ten, kto weźmie 2), 📏 **Linie** (pierwszy, kto skompletuje 3 dowolne rzędy / kolumny / bloki 3×3), 🏁 **Sprint** (pierwszy, kto wstawi 20 poprawnych cyfr). Wybór pod poziomami trudności. Hardcore tylko w klasycznej. Cele i progi: `BLITZ_ROUNDS`, `LINE_TARGET`, `SPRINT_TARGET` w `server.js`.
 - **Zagadka dnia (📅):** jedna plansza na każdy poziom na dobę (czas polski), taka sama dla wszystkich, jedna próba, osobna tabela czasów dla każdego poziomu i wczorajsi zwycięzcy. Czas mierzy serwer (od pierwszego pobrania planszy do wysłania poprawnego rozwiązania), więc odświeżenie strony nie resetuje zegara (rozwiązane pola wracają z pamięci przeglądarki). Wynik zapisują tylko konta, goście mogą zagrać dla zabawy. Czas niemożliwy dla człowieka (jak w grze rankingowej) jest odrzucany.
 - **Znajomi i wyzwania (👥):** lista znajomych po nicku (tylko konta). Zaproszenie trzeba zaakceptować (można je odrzucić albo cofnąć, a wzajemne zaproszenia łączą od razu). Przy znajomych widać status: online, w grze, offline. Przycisk **Wyzwij** wysyła wyzwanie na wybrany w menu poziom i tryb. Wyzwany dostaje okienko z 60 s na odpowiedź, mecz jest bez rankingu. Limity: 50 znajomych, 20 oczekujących zaproszeń, antyspamowe limity zaproszeń i wyzwań.
 - **Strony trybów:** menu główne to kafelki, a każdy tryb ma własną stronę z adresem (`/tryb/klasyczna`, `/tryb/blitz`, `/tryb/linie`, `/tryb/sprint`, ponadto `/zagadka` i `/znajomi`). Poziom trudności, rankingowa/towarzyska, solo i gra ze znajomym wybierasz na stronie trybu. Przycisk „wstecz" w przeglądarce działa.
-- **Liczniki w meczu:** przy nicku rywala i przy „Ty" widać postęp (np. `7/20`). W trybie **Linie** oznaczone są rzędy (niebieski pasek z lewej), kolumny (pomarańczowy u góry) i bloki (fioletowa ramka), które się liczą; ukończone robią się zielone.
+- **Liczniki w meczu:** przy nicku rywala i przy „Ty" widać postęp (np. `7/20`). W trybie **Linie** plansza nie ma dodatkowych obramowań – liczy się każdy skompletowany rząd, kolumna lub blok.
 - **Podgląd plansz z historii:** kliknij mecz w „Moje statystyki", żeby zobaczyć końcową planszę swoją i rywala (błędne cyfry na czerwono). Dotyczy meczów rozegranych po tej aktualizacji.
 - **⏱ Na czas** (`/tryb/na-czas`): wybierasz 30 s, 1, 2 albo 5 min. Wygrywa ten, kto w tym czasie wstawi więcej poprawnych cyfr (remis: mniej błędów, potem kto wcześniej zdobył ostatnie pole). Skończysz planszę, od razu dostajesz następną, a rywal gra swoją. Obaj dostają te same plansze w tej samej kolejności. Timer odlicza w dół i robi się czerwony w ostatnich 10 s. Bez rankingu.
 - **🤖 Trening z botem:** przycisk na stronie każdego trybu (poza Hardcore): Początkujący, Średni albo Mistrz. Bot wstawia cyfry w ludzkim, losowym tempie, czasem się myli i dostaje blokadę. Zawsze bez rankingu, nie trafia do bazy ani do zgłoszeń, w historii ma ikonę 🤖. Gdy w kolejce nikogo nie ma przez 20 s, pojawia się przycisk „Zagraj z botem". Parametry botów: `BOT_LEVELS` w `server.js`.
@@ -51,6 +53,12 @@ public/admin.html    # panel admina (/admin.html)
 | `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` | captcha przy zakładaniu konta | nie (zalecane) |
 
 Tabele (`users`, `reports`, `bans`, `meta`) tworzą się same. Konfiguracja Neon, Google i Turnstile: bez zmian względem poprzedniej wersji (Neon: neon.tech → Connect → connection string → `DATABASE_URL`).
+
+## Panel właściciela (`/owner.html`)
+
+Ustaw w Render → Environment zmienną **`OWNER_PASSWORD`** (inna niż `ADMIN_PASSWORD`). Wejdź na `https://twoja-gra.onrender.com/owner.html`.
+Właściciel ma wszystko, co admin (bez limitów: bany także na stałe), a do tego: statystyki, ogłoszenia dla graczy, **podgląd meczów na żywo** (obie plansze), pełną kartę gracza (zmiana Elo, wiadomość, usunięcie konta), edycję listy „Co nowego" i opisów trybów, **reset rankingu** (wszystko lub jeden poziom, z potwierdzeniem `RESET`) oraz dziennik, kto z panelu co zrobił.
+Admin (`/admin.html`) ma: zgłoszenia i bany czasowe (maks. 30 dni), ostrzeżenia, zerowanie unieważnionych meczów, pomysły i błędy od graczy.
 
 ## Panel admina
 

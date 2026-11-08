@@ -176,6 +176,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
   <div id="menu">
     <h1>Sudoku <span>Duel</span></h1>
     <p class="sub">Ten sam sudoku, dwóch graczy. Kto pierwszy rozwiąże – wygrywa. <span id="online"></span></p>
+    <div class="card hidden" id="hubNote"></div>
 
     <div class="card">
       <div class="who">
@@ -213,6 +214,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
       <div class="info" id="prevSeason" style="margin-top:8px"></div>
     </div>
     <div class="row" style="margin-bottom:10px"><button class="sec small" id="rulesBtn">❓ Jak grać</button><button class="sec small" id="repBtn">💡 Pomysł / błąd</button></div>
+    <div class="row" style="margin-bottom:10px"><button class="sec small" id="chgBtn">📰 Co nowego</button></div>
       <div class="card" style="color:var(--muted);font-size:14px">
       Sterowanie: cyfry z klawiatury lub paska pod planszą, strzałki przesuwają zaznaczenie. <b>Notatki:</b> kliknij dwa razy szybko puste pole (albo przycisk ✎ / klawisz N), potem wpisuj cyfry – pojawią się jako małe notatki w polu. Odświeżenie strony w trakcie meczu nie kończy gry – masz 30 sekund na powrót.
     </div>
@@ -331,10 +333,16 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <div class="card"><b>Pojedynek</b>
       <p class="info">Ty i rywal dostajecie <b>tę samą planszę</b>. Wygrywa ten, kto pierwszy ją poprawnie rozwiąże. Błędna cyfra = <b>blokada</b> (Łatwy 2 s, Średni 4 s, Trudny 10 s). <b>Hardcore</b>: nie widzisz, czy cyfra jest dobra – błąd wychodzi dopiero na końcu.</p></div>
     <div class="card"><b>Tryby</b>
-      <p class="info"><b>Klasyczny</b> – kto pierwszy rozwiąże. <b>Blitz</b> – krótki czas na całą planszę. <b>Linie</b> – widzisz obramowane wiersze, kolumny i bloki z ≥4 pustymi polami: tam warto zacząć. <b>Sprint</b> – wygrywa ten, kto pierwszy wypełni określoną liczbę pól. <b>Na czas</b> – 30 s–5 min: kto ułoży więcej plansz; po skończeniu planszy dostajesz następną. <b>Zagadka dnia</b> – jedna plansza dla wszystkich i tabela dnia. <b>Z botem</b> – trening bez presji.</p></div>
+      <p class="info"><b>Klasyczny</b> – kto pierwszy rozwiąże. <b>Blitz</b> – krótki czas na całą planszę. <b>Linie</b> – wygrywa ten, kto pierwszy skompletuje 3 dowolne rzędy, kolumny lub bloki 3×3. <b>Sprint</b> – wygrywa ten, kto pierwszy wypełni określoną liczbę pól. <b>Na czas</b> – 30 s–5 min: kto ułoży więcej plansz; po skończeniu planszy dostajesz następną. <b>Zagadka dnia</b> – jedna plansza dla wszystkich i tabela dnia. <b>Z botem</b> – trening bez presji.</p></div>
     <div class="card"><b>Ranking</b>
       <p class="info">Mecze rankingowe zmieniają Twoje <b>Elo</b> (osobno na każdym poziomie). Sezony resetują tabelę, a Twoja ranga zostaje pamiętana. Gry towarzyskie i ze znajomymi nie wpływają na Elo. Konto zakładasz w ustawieniach – goście grają tylko towarzysko.</p></div>
     <button class="sec" id="ruBack">← Wróć do menu</button>
+  </div>
+
+  <div id="changes" class="hidden">
+    <h1>📰 Co nowego</h1>
+    <div id="chgList"><div class="card info">Ładowanie…</div></div>
+    <button class="sec" id="chgBack">← Wróć do menu</button>
   </div>
 
   <div id="report" class="hidden">
@@ -437,7 +445,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
 <script>
 const $ = id => document.getElementById(id);
-const screens = ['menu','mode','searching','game','result','profile','daily','friends','rules','report'];
+const screens = ['menu','mode','searching','game','result','profile','daily','friends','rules','report','changes'];
 function show(s){ if (s !== 'searching'){ clearTimeout(offerT); $('botOffer').classList.add('hidden'); } screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
@@ -508,7 +516,7 @@ const MEDAL = ['🥇','🥈','🥉'];
 const MODES = {
   classic: { label: '🧩 Klasyczna', short: '', info: 'Pierwszy, kto wypełni całą planszę.' },
   blitz:   { label: '⚡ Blitz',     short: '⚡ Blitz',  info: '3 plansze pod rząd. Wygrywa ten, kto pierwszy weźmie 2 z 3. Bez rankingu.' },
-  line:    { label: '📏 Linie',     short: '📏 Linie',  info: 'Wygrywa pierwszy, kto skompletuje 3 rzędy, kolumny lub bloki 3×3 (liczą się te z co najmniej 4 pustymi polami). Bez rankingu.' },
+  line:    { label: '📏 Linie',     short: '📏 Linie',  info: 'Wygrywa pierwszy, kto skompletuje 3 dowolne rzędy, kolumny lub bloki 3×3. Bez rankingu.' },
   sprint:  { label: '🏁 Sprint',    short: '🏁 Sprint', info: 'Wygrywa pierwszy, kto wstawi 20 poprawnych cyfr. Bez rankingu.' },
   rush:    { label: '⏱ Na czas',    short: '⏱ Na czas', info: 'Wybierasz czas gry. Wygrywa ten, kto w tym czasie wstawi więcej poprawnych cyfr. Skończysz planszę, od razu dostajesz następną (rywal gra swoją). Błąd = blokada jak zwykle. Bez rankingu.' }
 };
@@ -552,6 +560,7 @@ function route(){
   if (p === '/zagadka') return openDaily();
   if (p === '/zasady'){ buildRulesDemo(); show('rules'); return; }
   if (p === '/zglos'){ show('report'); return; }
+  if (p === '/zmiany'){ loadChanges(); show('changes'); return; }
   if (p === '/znajomi'){ if (me && !me.guest) return openFriends(); history.replaceState(null, '', '/'); }
   else if (m && MODE_BY_SLUG[m[1]]){ gmode = MODE_BY_SLUG[m[1]]; store.set('gmode', gmode); renderMode(); show('mode'); return; }
   else if (p !== '/') history.replaceState(null, '', '/');
@@ -568,6 +577,21 @@ function showAnnounce(m){
 }
 $('warnOk').onclick = () => { $('warnBox').classList.add('hidden'); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'warnack' })); };
 $('rulesBtn').onclick = () => nav('/zasady');
+$('chgBtn').onclick = () => nav('/zmiany');
+$('chgBack').onclick = () => nav('/');
+async function loadChanges(){
+  const box = $('chgList');
+  try {
+    const list = await (await fetch('/api/changelog')).json();
+    box.innerHTML = list.map(e => '<div class="card"><b>' + (e.v ? 'v' + esc(e.v) + ' · ' : '') + esc(e.title) + '</b>' + (e.date ? ' <span class="info">' + esc(e.date) + '</span>' : '')
+      + '<ul style="margin:8px 0 0;padding-left:18px">' + e.items.map(x => '<li class="info" style="font-size:14px">' + esc(x) + '</li>').join('') + '</ul></div>').join('') || '<div class="card info">Brak wpisów.</div>';
+  } catch { box.innerHTML = '<div class="card info">Nie udało się wczytać listy zmian.</div>'; }
+}
+fetch('/api/texts').then(r => r.json()).then(t => {                // opisy ustawiane przez właściciela
+  if (t.modes) for (const k in t.modes) if (MODES[k]) MODES[k].info = t.modes[k];
+  if (t.hub){ $('hubNote').textContent = t.hub; $('hubNote').classList.remove('hidden'); }
+  try { renderMode(); } catch {}
+}).catch(() => {});
 $('repBtn').onclick = () => nav('/zglos');
 $('ruBack').onclick = () => nav('/');
 $('rpBack').onclick = () => nav('/');
@@ -1026,23 +1050,13 @@ function lineUnits(puzzle){                                  // te same zasady c
     const br = (k / 3 | 0) * 3, bc = (k % 3) * 3;
     all.push({ type: 'blk', i: k, br, bc, cells: Array.from({ length: 9 }, (_, j) => (br + (j / 3 | 0)) * 9 + bc + (j % 3)) });
   }
-  const open = all.filter(u => u.cells.some(c => !puzzle[c]));
-  const big = open.filter(u => u.cells.filter(c => !puzzle[c]).length >= 4);
-  return big.length >= 6 ? big : open;
+  return all.filter(u => u.cells.some(c => !puzzle[c]));
 }
 function renderLineMarks(){
-  const L = $('lineLayer'), on = G && G.gmode === 'line' && G.units;
+  const on = G && G.gmode === 'line' && G.units;
+  $('lineLayer').innerHTML = '';
   $('lineLegend').classList.toggle('hidden', !on);
-  if (!on){ L.innerHTML = ''; return; }
-  const q = 100 / 9;
-  L.innerHTML = G.units.map(u => {
-    const done = u.cells.every(c => G.cur[c]) ? ' done' : '';
-    const st = u.type === 'row' ? 'left:0;top:' + (u.i * q) + '%;height:' + q + '%'
-      : u.type === 'col' ? 'top:0;left:' + (u.i * q) + '%;width:' + q + '%'
-      : 'left:' + (u.bc * q) + '%;top:' + (u.br * q) + '%;width:' + (3 * q) + '%;height:' + (3 * q) + '%';
-    return '<i class="' + u.type + done + '" style="' + st + '"></i>';
-  }).join('');
-  $('lineLegend').textContent = '🟦 pasek z lewej = rząd · 🟧 pasek u góry = kolumna · 🟪 ramka = blok · liczą się tylko oznaczone, cel: ' + (G.goal) + ' (zielone = gotowe)';
+  if (on) $('lineLegend').textContent = 'Cel: skompletuj ' + G.goal + ' dowolne rzędy, kolumny lub bloki 3×3.';
 }
 function render(){
   if (!G) return;

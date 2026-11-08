@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Sudoku Duel – panel właściciela</title>
+<style>
+:root{--bg:#161512;--panel:#262421;--panel2:#312e2b;--text:#e8e6e3;--muted:#989795;--green:#81b64c;--red:#e5534b;--line:#4a4743;--gold:#f0b429}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;display:flex;justify-content:center}
+#app{width:100%;max-width:760px;padding:16px}
+h1{margin:8px 0 14px;font-size:26px}h1 span{color:var(--red)}
+h2{font-size:17px;margin:22px 0 8px}
+.card{background:var(--panel);border-radius:12px;padding:14px;margin-bottom:12px}
+input{width:100%;padding:11px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:15px}
+button{cursor:pointer;border:0;border-radius:8px;font-size:14px;font-weight:700;padding:9px 12px;background:var(--green);color:#fff}
+button.sec{background:var(--panel2);color:var(--text)}button.red{background:var(--red)}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.muted{color:var(--muted);font-size:13px}
+.tag{display:inline-block;padding:2px 8px;border-radius:99px;background:var(--panel2);font-size:12px;margin-right:4px}
+.tag.red{background:#5b2623}.tag.gold{background:#5a4510;color:var(--gold)}
+.rep{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
+.hidden{display:none!important}
+.err{color:var(--red);min-height:18px;margin-top:8px;font-size:14px}
+select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:15px;margin-top:8px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.stat{background:var(--panel2);border-radius:8px;padding:8px}.stat b{display:block;font-size:20px}
+.fb img,.fb video{max-width:100%;max-height:360px;border-radius:8px;margin-top:8px;display:block}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}.modal .card{width:100%;max-width:380px;margin:0}
+table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;text-align:left;font-size:14px}th{color:var(--muted);font-weight:500}
+</style>
+</head>
+<body>
+<div id="app">
+  <h1>Sudoku Duel <span>owner</span></h1>
+  <script>window.PANEL = "owner";</script>
+
+  <div id="login" class="card">
+    <b>Klucz właściciela</b>
+    <p class="muted">To wartość zmiennej <code>OWNER_PASSWORD</code> ustawionej na serwerze.</p>
+    <input type="password" id="key" placeholder="Klucz" autocomplete="current-password">
+    <div class="err" id="lerr"></div>
+    <div class="row"><button id="go">Zaloguj</button></div>
+  </div>
+
+  <div id="panel" class="hidden">
+    <div class="row" style="margin:0 0 6px;justify-content:space-between;align-items:center">
+      <span class="muted" id="status"></span>
+      <span><button class="sec" id="refresh">Odśwież</button> <button class="sec" id="logout">Wyloguj</button></span>
+    </div>
+
+    <div id="ownerArea"></div>
+
+    <h2>💡 Pomysły i błędy od graczy</h2>
+    <div class="row" style="margin:0 0 8px"><button class="sec" id="fbAll">Wszystkie</button><button class="sec" id="fbOpen">Tylko otwarte</button></div>
+    <div id="fbList"></div>
+
+    <h2>🚩 Otwarte zgłoszenia</h2>
+    <div id="reports"></div>
+
+    <h2>🔎 Sprawdź gracza</h2>
+    <div class="card">
+      <input type="text" id="qname" placeholder="Nick gracza">
+      <div class="row"><button class="sec" id="qgo">Szukaj</button></div>
+      <div id="qres" class="muted" style="margin-top:10px"></div>
+    </div>
+
+    <h2>🚫 Aktywne blokady</h2>
+    <div class="card"><table id="bans"></table></div>
+  </div>
+</div>
+
+<script src="/panel.js"></script>
+</body>
+</html>
