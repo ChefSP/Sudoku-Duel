@@ -167,6 +167,8 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 <div id="banner" class="hidden"></div>
 <div id="chal" class="hidden"><b id="chalTxt"></b><div class="info" id="chalSub"></div><div class="row"><button id="chalYes">⚔ Przyjmij</button><button class="sec" id="chalNo">Odrzuć</button></div></div>
 <div id="toast" class="hidden"></div>
+<div id="ann" class="hidden" style="position:fixed;top:0;left:0;right:0;z-index:60;background:#2a5bd7;color:#fff;padding:8px 12px;text-align:center;font-size:14px"></div>
+<div id="warnBox" class="hidden" style="position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:16px"><div class="card" style="max-width:380px"><b>⚠ Ostrzeżenie od moderacji</b><p id="warnTxt" class="info" style="font-size:15px"></p><button id="warnOk">Rozumiem</button></div></div>
 <button id="gear" aria-label="Ustawienia">⚙</button>
 <div id="app">
 
@@ -210,7 +212,8 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
       <table id="lb"><tr><td class="sub">Ładowanie…</td></tr></table>
       <div class="info" id="prevSeason" style="margin-top:8px"></div>
     </div>
-    <div class="card" style="color:var(--muted);font-size:14px">
+    <div class="row" style="margin-bottom:10px"><button class="sec small" id="rulesBtn">❓ Jak grać</button><button class="sec small" id="repBtn">💡 Pomysł / błąd</button></div>
+      <div class="card" style="color:var(--muted);font-size:14px">
       Sterowanie: cyfry z klawiatury lub paska pod planszą, strzałki przesuwają zaznaczenie. <b>Notatki:</b> kliknij dwa razy szybko puste pole (albo przycisk ✎ / klawisz N), potem wpisuj cyfry – pojawią się jako małe notatki w polu. Odświeżenie strony w trakcie meczu nie kończy gry – masz 30 sekund na powrót.
     </div>
   </div>
@@ -317,6 +320,39 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <button class="sec" id="fBack">← Wróć do menu</button>
   </div>
 
+  <div id="rules" class="hidden">
+    <h1>❓ Jak grać</h1>
+    <div class="card"><b>Sudoku w 30 sekund</b>
+      <p class="info">Plansza ma 9×9 pól, podzielonych na 9 bloków 3×3. W każdy <b>wiersz</b>, każdą <b>kolumnę</b> i każdy <b>blok</b> wpisz cyfry 1–9 tak, żeby <b>żadna się nie powtórzyła</b>. Część cyfr jest już na planszy – resztę musisz znaleźć.</p>
+      <div id="ruDemo" style="display:grid;grid-template-columns:repeat(9,1fr);max-width:270px;margin:8px auto;border:2px solid var(--muted)"></div>
+      <p class="info">Zaznaczone pole (żółte) „widzi” swój wiersz, kolumnę i blok (niebieskie) – cyfra, którą wpiszesz, nie może się tam powtórzyć.</p></div>
+    <div class="card"><b>Jak wypełniać</b>
+      <p class="info">1. Znajdź wiersz, kolumnę lub blok, w którym brakuje tylko 1–2 cyfr.<br>2. Dla pustego pola wykreśl cyfry, które już są w jego wierszu, kolumnie i bloku – zostaje kandydat.<br>3. Gdy kandydat jest tylko jeden, wpisz go. Gdy kilku – użyj <b>notatek</b> (dwuklik w puste pole lub przycisk ✎).<br>4. Jeśli cyfra pasuje tylko w jednym miejscu bloku/wiersza – to jej miejsce.</p></div>
+    <div class="card"><b>Pojedynek</b>
+      <p class="info">Ty i rywal dostajecie <b>tę samą planszę</b>. Wygrywa ten, kto pierwszy ją poprawnie rozwiąże. Błędna cyfra = <b>blokada</b> (Łatwy 2 s, Średni 4 s, Trudny 10 s). <b>Hardcore</b>: nie widzisz, czy cyfra jest dobra – błąd wychodzi dopiero na końcu.</p></div>
+    <div class="card"><b>Tryby</b>
+      <p class="info"><b>Klasyczny</b> – kto pierwszy rozwiąże. <b>Blitz</b> – krótki czas na całą planszę. <b>Linie</b> – widzisz obramowane wiersze, kolumny i bloki z ≥4 pustymi polami: tam warto zacząć. <b>Sprint</b> – wygrywa ten, kto pierwszy wypełni określoną liczbę pól. <b>Na czas</b> – 30 s–5 min: kto ułoży więcej plansz; po skończeniu planszy dostajesz następną. <b>Zagadka dnia</b> – jedna plansza dla wszystkich i tabela dnia. <b>Z botem</b> – trening bez presji.</p></div>
+    <div class="card"><b>Ranking</b>
+      <p class="info">Mecze rankingowe zmieniają Twoje <b>Elo</b> (osobno na każdym poziomie). Sezony resetują tabelę, a Twoja ranga zostaje pamiętana. Gry towarzyskie i ze znajomymi nie wpływają na Elo. Konto zakładasz w ustawieniach – goście grają tylko towarzysko.</p></div>
+    <button class="sec" id="ruBack">← Wróć do menu</button>
+  </div>
+
+  <div id="report" class="hidden">
+    <h1>💡 Pomysł lub błąd</h1>
+    <p class="sub">Powiedz, co poprawić albo co nie działa. Możesz dołączyć zrzut ekranu lub krótkie nagranie (do 30 s).</p>
+    <div class="card">
+      <div class="seg" id="rpKind"><button data-k="bug" class="on">🐞 Błąd</button><button data-k="idea">💡 Pomysł</button><button data-k="other">💬 Inne</button></div>
+      <textarea id="rpText" maxlength="1000" rows="5" placeholder="Opisz dokładnie: co kliknąłeś, co się stało, czego oczekiwałeś…" style="width:100%;margin-top:8px;box-sizing:border-box"></textarea>
+      <div class="info" id="rpCnt">0 / 1000</div>
+      <label class="info" style="display:block;margin-top:8px">Załącznik (opcjonalnie): zrzut ekranu (PNG/JPG) lub wideo (MP4/WebM, max 30 s, 10 MB)</label>
+      <input type="file" id="rpFile" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime">
+      <div class="info" id="rpFileInfo"></div>
+      <button id="rpSend">Wyślij</button>
+      <div class="info" id="rpMsg"></div>
+    </div>
+    <button class="sec" id="rpBack">← Wróć do menu</button>
+  </div>
+
   <div id="profile" class="hidden">
     <h1>Statystyki <span id="pName"></span></h1>
     <p class="sub">Liczą się mecze rankingowe. Czasy tylko z rozwiązanych plansz.</p>
@@ -401,7 +437,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
 <script>
 const $ = id => document.getElementById(id);
-const screens = ['menu','mode','searching','game','result','profile','daily','friends'];
+const screens = ['menu','mode','searching','game','result','profile','daily','friends','rules','report'];
 function show(s){ if (s !== 'searching'){ clearTimeout(offerT); $('botOffer').classList.add('hidden'); } screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
@@ -514,11 +550,89 @@ function route(){
   if (G) return;                                              // w trakcie gry adres nie zmienia ekranu
   const p = location.pathname.replace(/\/+$/, '') || '/', m = p.match(/^\/tryb\/([a-z-]+)$/);
   if (p === '/zagadka') return openDaily();
+  if (p === '/zasady'){ buildRulesDemo(); show('rules'); return; }
+  if (p === '/zglos'){ show('report'); return; }
   if (p === '/znajomi'){ if (me && !me.guest) return openFriends(); history.replaceState(null, '', '/'); }
   else if (m && MODE_BY_SLUG[m[1]]){ gmode = MODE_BY_SLUG[m[1]]; store.set('gmode', gmode); renderMode(); show('mode'); return; }
   else if (p !== '/') history.replaceState(null, '', '/');
   show('menu'); loadLb();
 }
+
+// ---------- Jak grać / zgłoszenia / ogłoszenia ----------
+let annT;
+function showAnnounce(m){
+  clearTimeout(annT); const el = $('ann');
+  if (!m.text || !m.until || m.until <= Date.now()){ el.classList.add('hidden'); return; }
+  el.textContent = '📢 ' + m.text; el.classList.remove('hidden');
+  annT = setTimeout(() => el.classList.add('hidden'), Math.min(m.until - Date.now(), 2147e6));
+}
+$('warnOk').onclick = () => { $('warnBox').classList.add('hidden'); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'warnack' })); };
+$('rulesBtn').onclick = () => nav('/zasady');
+$('repBtn').onclick = () => nav('/zglos');
+$('ruBack').onclick = () => nav('/');
+$('rpBack').onclick = () => nav('/');
+function buildRulesDemo(){
+  const d = $('ruDemo'); if (d.children.length) return;
+  const sr = 4, sc = 4;                                        // zaznaczone pole
+  for (let r = 0; r < 9; r++) for (let c = 0; c < 9; c++){
+    const x = document.createElement('div'); x.style.cssText = 'aspect-ratio:1;border:1px solid var(--line,#8884);';
+    if (c % 3 === 2 && c < 8) x.style.borderRight = '2px solid var(--muted)';
+    if (r % 3 === 2 && r < 8) x.style.borderBottom = '2px solid var(--muted)';
+    const same = r === sr || c === sc || (Math.floor(r/3) === Math.floor(sr/3) && Math.floor(c/3) === Math.floor(sc/3));
+    if (same) x.style.background = 'rgba(60,120,255,.28)';
+    if (r === sr && c === sc) x.style.background = 'rgba(255,200,0,.6)';
+    d.appendChild(x);
+  }
+}
+let rpKind = 'bug', rpBlob = null, rpMime = '';
+$('rpKind').onclick = e => { const b = e.target.closest('button'); if (!b) return; rpKind = b.dataset.k; [...$('rpKind').children].forEach(x => x.classList.toggle('on', x === b)); };
+$('rpText').oninput = () => { $('rpCnt').textContent = $('rpText').value.length + ' / 1000'; };
+function compressImage(file){
+  return new Promise((ok, no) => {
+    const img = new Image(), url = URL.createObjectURL(file);
+    img.onload = () => {
+      const k = Math.min(1, 1600 / Math.max(img.width, img.height)), c = document.createElement('canvas');
+      c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      c.toBlob(b => b ? ok(b) : no(new Error('x')), 'image/jpeg', 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); no(new Error('x')); };
+    img.src = url;
+  });
+}
+$('rpFile').onchange = async () => {
+  const f = $('rpFile').files[0], info = $('rpFileInfo'); rpBlob = null; info.textContent = '';
+  if (!f) return;
+  if (f.type.startsWith('image/')){
+    try { rpBlob = await compressImage(f); rpMime = 'image/jpeg'; info.textContent = '✓ Zrzut gotowy (' + Math.round(rpBlob.size / 1024) + ' KB)'; }
+    catch { info.textContent = 'Nie udało się wczytać obrazu.'; $('rpFile').value = ''; }
+  } else if (f.type.startsWith('video/')){
+    if (f.size > 10e6){ info.textContent = 'Nagranie jest za duże (max 10 MB, ok. 15–30 s).'; $('rpFile').value = ''; return; }
+    const v = document.createElement('video'), url = URL.createObjectURL(f); v.preload = 'metadata';
+    const bad = t => { info.textContent = t; $('rpFile').value = ''; URL.revokeObjectURL(url); };
+    v.onloadedmetadata = () => { if (v.duration > 31) return bad('Nagranie jest za długie (max 30 s).'); rpBlob = f; rpMime = f.type; info.textContent = '✓ Nagranie gotowe (' + Math.round(v.duration) + ' s, ' + (f.size / 1e6).toFixed(1) + ' MB)'; URL.revokeObjectURL(url); };
+    v.onerror = () => { rpBlob = f; rpMime = f.type; info.textContent = '✓ Nagranie dodane'; URL.revokeObjectURL(url); };
+    v.src = url;
+  } else { info.textContent = 'Obsługiwane: PNG, JPG, MP4, WebM.'; $('rpFile').value = ''; }
+};
+$('rpSend').onclick = async () => {
+  const text = $('rpText').value.trim(), msg = $('rpMsg'), btn = $('rpSend');
+  if (text.length < 5){ msg.textContent = 'Opisz to trochę dokładniej (min. 5 znaków).'; return; }
+  btn.disabled = true; msg.textContent = 'Wysyłanie…';
+  try {
+    const ctx = { ua: navigator.userAgent, url: location.href.slice(0, 80), screen: innerWidth + 'x' + innerHeight };
+    let r = await fetch('/api/feedback', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: store.get('token'), kind: rpKind, text, ctx }) });
+    let d = await r.json(); if (!r.ok) throw new Error(d.error || 'Błąd');
+    if (rpBlob){
+      msg.textContent = 'Wysyłanie załącznika…';
+      r = await fetch('/api/feedback/' + d.id + '/media', { method:'POST', headers:{ 'content-type': rpMime, 'x-token': store.get('token') }, body: rpBlob });
+      const dm = await r.json().catch(() => ({})); if (!r.ok) throw new Error('Zgłoszenie wysłane, ale bez załącznika: ' + (dm.error || 'błąd'));
+    }
+    msg.textContent = ''; $('rpText').value = ''; $('rpCnt').textContent = '0 / 1000'; $('rpFile').value = ''; $('rpFileInfo').textContent = ''; rpBlob = null;
+    toast('Dziękujemy! Zgłoszenie wysłane ✔'); nav('/');
+  } catch (e) { msg.textContent = e.message; }
+  btn.disabled = false;
+};
 addEventListener('popstate', route);
 $('mBack').onclick = () => nav('/');
 
@@ -586,7 +700,9 @@ function onMsg(m){
   else if (m.type === 'oppstatus') oppStatus(m);
   else if (m.type === 'result') endMatch(m);
   else if (m.type === 'notice') toast(m.text);
-  else if (m.type === 'banned'){ replaced = true; banner('Twoje konto lub adres IP zostały zablokowane' + (m.reason ? ': ' + m.reason : '.')); }
+  else if (m.type === 'banned'){ replaced = true; banner('Twoje konto lub adres IP zostały zablokowane' + (m.until ? ' do ' + new Date(m.until).toLocaleString('pl-PL', { dateStyle:'short', timeStyle:'short' }) : ' na stałe') + (m.reason ? '. Powód: ' + m.reason : '.')); }
+  else if (m.type === 'warning'){ $('warnTxt').textContent = m.text; $('warnBox').classList.remove('hidden'); }
+  else if (m.type === 'announce'){ showAnnounce(m); }
   else if (m.type === 'rematchWait'){ const b = $('rematch'); b.disabled = true; b.className = ''; b.textContent = '⏳ Czekam na przeciwnika…'; }
   else if (m.type === 'rematchOffer'){ const b = $('rematch'); b.disabled = false; b.className = 'offer'; b.textContent = '🔁 Przeciwnik chce rewanżu – graj!'; }
   else if (m.type === 'rematchGone'){ const b = $('rematch'); b.disabled = true; b.className = ''; b.textContent = 'Przeciwnik wyszedł'; }

@@ -1,6 +1,6 @@
 // Service worker: najpierw sieć (zawsze świeża wersja gry), a bez internetu zapisana kopia strony.
 // Nie dotyka /api/, panelu admina ani WebSocketów.
-const CACHE = 'sudoku-duel-v1';
+const CACHE = 'sudoku-duel-v8';
 const SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

@@ -190,6 +190,7 @@ function indexUser(u) {
 
 const reports = new Map();        // id -> zgłoszenie
 const banById = new Map(), banUser = new Map(), banIp = new Map();
+const feedback = new Map();                       // zgłoszenia pomysłów i błędów (tekst w bazie, załączniki osobno)
 const saveU = u => { if (!u.bot) store.save('users', u); };
 const removeU = u => store.remove('users', u);
 function indexBan(b) { banById.set(b.id, b); (b.type === 'ip' ? banIp : banUser).set(b.value, b); }
@@ -198,10 +199,11 @@ const liveBan = b => (b && (!b.until || b.until > Date.now())) ? b : null;
 const userBanned = id => liveBan(banUser.get(id));
 const ipBanned = ip => liveBan(banIp.get(ip));
 
+const MEDIA_DIR = path.join(path.dirname(DATA_FILE), 'media');
 function makeJsonStore() {
   let timer = null;
   const write = () => {
-    const data = JSON.stringify({ version: 3, users: [...users.values()], reports: [...reports.values()], bans: [...banById.values()], meta });
+    const data = JSON.stringify({ version: 3, users: [...users.values()], reports: [...reports.values()], bans: [...banById.values()], feedback: [...feedback.values()], meta });
     fs.writeFile(DATA_FILE + '.tmp', data, err => {
       if (!err) fs.rename(DATA_FILE + '.tmp', DATA_FILE, () => {});
     });
@@ -211,8 +213,8 @@ function makeJsonStore() {
     kind: 'plik JSON',
     async load() {
       let raw;
-      try { raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return { users: [], reports: [], bans: [], meta: [] }; }
-      if (raw && raw.version >= 2) return { users: raw.users || [], reports: raw.reports || [], bans: raw.bans || [], meta: raw.meta ? [raw.meta] : [] };
+      try { raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return { users: [], reports: [], bans: [], feedback: [], meta: [] }; }
+      if (raw && raw.version >= 2) return { users: raw.users || [], reports: raw.reports || [], bans: raw.bans || [], feedback: raw.feedback || [], meta: raw.meta ? [raw.meta] : [] };
       // stary format: { token: {name, elo, wins, losses} }
       const list = Object.entries(raw || {}).map(([token, o]) => {
         const u = newUser('Guest');
@@ -223,7 +225,11 @@ function makeJsonStore() {
       return { users: list, reports: [], bans: [], meta: [] };
     },
     save() { schedule(); },
-    remove() { schedule(); }
+    remove() { schedule(); },
+    // załączniki (zrzuty ekranu / wideo) leżą w osobnych plikach, żeby nie puchła pamięć
+    async mediaPut(id, mime, buf) { await fs.promises.mkdir(MEDIA_DIR, { recursive: true }); await fs.promises.writeFile(path.join(MEDIA_DIR, id), buf); await fs.promises.writeFile(path.join(MEDIA_DIR, id + '.mime'), mime); },
+    async mediaGet(id) { try { return { mime: await fs.promises.readFile(path.join(MEDIA_DIR, id + '.mime'), 'utf8'), buf: await fs.promises.readFile(path.join(MEDIA_DIR, id)) }; } catch { return null; } },
+    async mediaDel(id) { for (const f of [id, id + '.mime']) await fs.promises.unlink(path.join(MEDIA_DIR, f)).catch(() => {}); }
   };
 }
 function makePgStore(url) {
@@ -233,7 +239,7 @@ function makePgStore(url) {
   const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
   const pool = new Pool({ connectionString: u.toString(), ssl, max: 5 });
   pool.on('error', e => console.error('pg pool:', e.message));
-  const TABLE = { users: 'users', reports: 'reports', bans: 'bans', meta: 'meta' };    // stała lista (nic od użytkownika nie trafia do SQL)
+  const TABLE = { users: 'users', reports: 'reports', bans: 'bans', meta: 'meta', feedback: 'feedback' };    // stała lista (nic od użytkownika nie trafia do SQL)
   return {
     kind: 'Postgres',
     async load() {
@@ -242,6 +248,7 @@ function makePgStore(url) {
         await pool.query(`CREATE TABLE IF NOT EXISTS ${TABLE[k]} (id text PRIMARY KEY, data jsonb NOT NULL)`);
         out[k] = (await pool.query(`SELECT data FROM ${TABLE[k]}`)).rows.map(x => x.data);
       }
+      await pool.query('CREATE TABLE IF NOT EXISTS media (id text PRIMARY KEY, mime text NOT NULL, data bytea NOT NULL, at bigint NOT NULL)');
       return out;
     },
     save(kind, obj) {
@@ -252,7 +259,10 @@ function makePgStore(url) {
     },
     remove(kind, obj) {
       pool.query(`DELETE FROM ${TABLE[kind]} WHERE id = $1`, [obj.id]).catch(e => console.error('pg delete:', e.message));
-    }
+    },
+    async mediaPut(id, mime, buf) { await pool.query('INSERT INTO media (id, mime, data, at) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET mime = EXCLUDED.mime, data = EXCLUDED.data', [id, mime, buf, Date.now()]); },
+    async mediaGet(id) { const r = await pool.query('SELECT mime, data FROM media WHERE id = $1', [id]); return r.rows[0] ? { mime: r.rows[0].mime, buf: r.rows[0].data } : null; },
+    async mediaDel(id) { await pool.query('DELETE FROM media WHERE id = $1', [id]).catch(() => {}); }
   };
 }
 const store = DATABASE_URL ? makePgStore(DATABASE_URL) : makeJsonStore();
@@ -307,6 +317,7 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   if (!Array.isArray(u.badges)) u.badges = [];
   for (const k of ['friends', 'fin', 'fout']) if (!Array.isArray(u[k])) u[k] = [];   // znajomi, zaproszenia do mnie, zaproszenia ode mnie
   if (!u.daily || typeof u.daily !== 'object') u.daily = { date: '', runs: {}, done: {} };
+  if (u.warning === undefined) u.warning = null;     // ostrzeżenie od moderacji (pokazujemy do potwierdzenia)
 }
 function pub(u) {
   return { name: u.name, guest: isGuest(u), google: !!u.google, stats: u.stats };
@@ -325,7 +336,85 @@ app.use('/api', (req, res, next) => {              // zablokowany adres IP nie k
 });
 
 // ładne adresy podstron gry (aplikacja sama rozpoznaje je po adresie)
-app.get(['/tryb/:mode', '/zagadka', '/znajomi'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get(['/tryb/:mode', '/zagadka', '/znajomi', '/zasady', '/zglos'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+
+// ---------- pomysły i błędy (z opcjonalnym zrzutem ekranu lub krótkim wideo) ----------
+const FEEDBACK_KINDS = ['bug', 'idea', 'other'], FEEDBACK_MAX = 500, IMG_MAX = 2.5e6, VID_MAX = 10e6, MEDIA_TOTAL_MAX = 150e6;
+function sniffMedia(b, mime) {
+  if (mime === 'image/png') return b.length > 8 && b.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+  if (mime === 'image/jpeg') return b.length > 4 && b[0] === 0xff && b[1] === 0xd8;
+  if (mime === 'image/webp') return b.length > 12 && b.subarray(0, 4).toString() === 'RIFF' && b.subarray(8, 12).toString() === 'WEBP';
+  if (mime === 'video/mp4' || mime === 'video/quicktime') return b.length > 12 && b.subarray(4, 8).toString() === 'ftyp';
+  if (mime === 'video/webm') return b.length > 4 && b.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+  return false;
+}
+async function dropFeedback(f) {
+  if (f.media && f.media.id) await store.mediaDel(f.media.id);
+  feedback.delete(f.id); store.remove('feedback', f);
+}
+app.post('/api/feedback', (req, res) => {
+  const b = req.body || {}, u = userByToken(b.token);
+  if (!u) return res.status(401).json({ error: 'Odśwież stronę i spróbuj ponownie.' });
+  if (limited('fb:' + u.id, 5, 3600e3) || limited('fbip:' + ipOf(req), 15, 3600e3)) return res.status(429).json({ error: 'Za dużo zgłoszeń, spróbuj za godzinę.' });
+  const text = String(b.text || '').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, ' ').trim().slice(0, 1000);
+  if (text.length < 5) return res.status(400).json({ error: 'Opisz to trochę dokładniej (min. 5 znaków).' });
+  const kind = FEEDBACK_KINDS.includes(b.kind) ? b.kind : 'other', c = b.ctx || {};
+  const f = { id: crypto.randomUUID(), at: Date.now(), userId: u.id, name: u.name, guest: isGuest(u), kind, text, status: 'open', media: null,
+              ctx: { ua: String(c.ua || '').slice(0, 200), url: String(c.url || '').slice(0, 80), screen: String(c.screen || '').slice(0, 30) } };
+  feedback.set(f.id, f); store.save('feedback', f);
+  if (feedback.size > FEEDBACK_MAX) {                          // zostaw najnowsze (najpierw wyrzucamy załatwione)
+    const old = [...feedback.values()].sort((x, y) => (x.status === 'done' ? 0 : 1) - (y.status === 'done' ? 0 : 1) || x.at - y.at)[0];
+    if (old && old.id !== f.id) dropFeedback(old);
+  }
+  res.json({ id: f.id });
+});
+app.post('/api/feedback/:id/media', express.raw({ type: () => true, limit: '10mb' }), async (req, res) => {
+  const u = userByToken(req.headers['x-token']), f = feedback.get(req.params.id);
+  if (!u || !f || f.userId !== u.id) return res.status(403).json({ error: 'Brak dostępu.' });
+  if (f.media) return res.status(409).json({ error: 'Załącznik jest już dodany.' });
+  if (limited('fbm:' + u.id, 8, 3600e3)) return res.status(429).json({ error: 'Za dużo załączników, spróbuj za godzinę.' });
+  const mime = String(req.headers['content-type'] || '').split(';')[0].trim().toLowerCase(), buf = req.body;
+  if (!Buffer.isBuffer(buf) || !buf.length) return res.status(400).json({ error: 'Pusty plik.' });
+  const isImg = mime.startsWith('image/');
+  if (!['image/png', 'image/jpeg', 'image/webp', 'video/mp4', 'video/webm', 'video/quicktime'].includes(mime) || !sniffMedia(buf, mime)) return res.status(400).json({ error: 'Ten format pliku nie jest obsługiwany (PNG, JPG, WebP, MP4, WebM).' });
+  if (buf.length > (isImg ? IMG_MAX : VID_MAX)) return res.status(413).json({ error: isImg ? 'Zrzut ekranu jest za duży (max 2,5 MB).' : 'Nagranie jest za duże (max 10 MB, ok. 15–30 s).' });
+  const id = crypto.randomUUID();
+  try { await store.mediaPut(id, mime, buf); } catch (e) { console.error('media:', e.message); return res.status(500).json({ error: 'Nie udało się zapisać pliku.' }); }
+  f.media = { id, mime, size: buf.length }; store.save('feedback', f);
+  let total = [...feedback.values()].reduce((n, x) => n + (x.media ? x.media.size : 0), 0);     // limit miejsca: najstarsze załączniki znikają
+  for (const x of [...feedback.values()].sort((a, b) => a.at - b.at)) {
+    if (total <= MEDIA_TOTAL_MAX) break;
+    if (x.media && x.id !== f.id) { total -= x.media.size; await store.mediaDel(x.media.id); x.media = { gone: true, size: 0 }; store.save('feedback', x); }
+  }
+  res.json({ ok: true });
+});
+app.get('/api/admin/feedback', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  res.json([...feedback.values()].sort((a, b) => b.at - a.at).map(f => ({ id: f.id, at: f.at, name: f.name, guest: f.guest, kind: f.kind, text: f.text, status: f.status, ctx: f.ctx,
+    media: f.media && f.media.id ? { id: f.media.id, mime: f.media.mime, size: f.media.size } : f.media && f.media.gone ? { gone: true } : null })));
+});
+app.get('/api/admin/media/:id', async (req, res) => {
+  if (!adminAuth(req, res)) return;
+  if (!/^[0-9a-f-]{36}$/.test(req.params.id)) return res.status(400).end();
+  const m = await store.mediaGet(req.params.id);
+  if (!m) return res.status(404).json({ error: 'Brak pliku.' });
+  res.set('Cache-Control', 'private, max-age=3600').type(m.mime).send(m.buf);
+});
+app.post('/api/admin/feedback/status', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const f = feedback.get(String((req.body || {}).id || ''));
+  if (!f) return res.status(404).json({ error: 'Nie ma takiego zgłoszenia.' });
+  f.status = req.body.status === 'open' ? 'open' : 'done'; store.save('feedback', f); res.json({ ok: true });
+});
+app.post('/api/admin/feedback/delete', async (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const f = feedback.get(String((req.body || {}).id || ''));
+  if (!f) return res.status(404).json({ error: 'Nie ma takiego zgłoszenia.' });
+  await dropFeedback(f); res.json({ ok: true });
+});
+setInterval(() => {                                            // sprzątanie: 45 dni (załatwione: 7 dni)
+  for (const f of [...feedback.values()]) { const age = Date.now() - f.at; if (age > 45 * 86400e3 || (f.status === 'done' && age > 7 * 86400e3)) dropFeedback(f); }
+}, 3600e3).unref();
 
 app.get('/api/config', (req, res) => {
   res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null, ranks: RANKS,
@@ -485,7 +574,7 @@ function broadcastOnline() {
 wss.on('connection', (ws, req) => {
   const ip = ipOf(req);
   const ib = ipBanned(ip);
-  if (ib) { send(ws, { type: 'banned', reason: ib.reason || '' }); ws.close(4003, 'banned'); return; }
+  if (ib) { send(ws, { type: 'banned', reason: ib.reason || '', until: ib.until || null }); ws.close(4003, 'banned'); return; }
   if ((ipConns.get(ip) || 0) >= MAX_CONN_PER_IP) { ws.close(1008, 'limit'); return; }
   ipConns.set(ip, (ipConns.get(ip) || 0) + 1);
 
@@ -530,6 +619,7 @@ wss.on('connection', (ws, req) => {
       if (limited('bot:' + p.user.id, 20, 60e3)) return notice(p, 'Za dużo gier z botem, poczekaj chwilę.');
       startBotGame(p, m.diff, { mode, secs: secsOf(m.secs), level: BOT_LEVELS[m.level] ? m.level : 'mid' });
     }
+    else if (m.type === 'warnack') { if (p.user.warning) { p.user.warning = null; saveU(p.user); } }
     else if (m.type === 'friends') sendP(p, friendsView(p.user));
     else if (m.type === 'fadd') friendAdd(p, m);
     else if (m.type === 'faccept') friendAccept(p, m);
@@ -611,7 +701,7 @@ function handleHello(ws, m) {
   }
   user.lastSeen = Date.now();
   const ub = userBanned(user.id);
-  if (ub) { send(ws, { type: 'banned', reason: ub.reason || '' }); ws.close(4003, 'banned'); return; }
+  if (ub) { send(ws, { type: 'banned', reason: ub.reason || '', until: ub.until || null }); ws.close(4003, 'banned'); return; }
 
   let p = players.get(user.id);
   if (p && p.ws && p.ws !== ws) {           // to samo konto w drugiej karcie: nowa przejmuje
@@ -625,6 +715,8 @@ function handleHello(ws, m) {
 
   send(ws, { type: 'hello', token, user: pub(user) });
   if (!isGuest(user)) send(ws, friendsView(user));
+  if (user.warning) send(ws, { type: 'warning', text: user.warning.text });
+  if (meta.announce && meta.announce.until > Date.now()) send(ws, { type: 'announce', text: meta.announce.text, until: meta.announce.until });
   pushFriendsOf(user);
   broadcastOnline();
 
@@ -1000,7 +1092,7 @@ function kickUser(userId) {
   const p = players.get(userId);
   if (!p) return;
   if (p.game && !p.game.over) endGame(p.game, 1 - p.idx, 'banned', { void: true });
-  if (p.ws) { send(p.ws, { type: 'banned', reason: (userBanned(userId) || {}).reason || '' }); try { p.ws.close(4003, 'banned'); } catch {} }
+  if (p.ws) { const bb = userBanned(userId) || {}; send(p.ws, { type: 'banned', reason: bb.reason || '', until: bb.until || null }); try { p.ws.close(4003, 'banned'); } catch {} }
 }
 app.get('/api/admin/overview', (req, res) => { if (adminAuth(req, res)) res.json(adminOverview()); });
 app.get('/api/admin/user', (req, res) => {
@@ -1023,12 +1115,13 @@ app.post('/api/admin/ban', (req, res) => {
     if (!u && req.body.name) u = users.get(nameIndex.get(String(req.body.name).toLowerCase()));
     if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
     if (userBanned(u.id)) return res.status(409).json({ error: 'Ten gracz jest już zablokowany.' });
-    ban = { id: crypto.randomUUID(), type: 'user', value: u.id, name: u.name, reason: why, at: Date.now(), until: null };
+    const hrs = Math.min(Math.max(+req.body.hours || 0, 0), 24 * 365);
+    ban = { id: crypto.randomUUID(), type: 'user', value: u.id, name: u.name, reason: why, at: Date.now(), until: hrs ? Date.now() + hrs * 3600e3 : null };
   } else if (type === 'ip') {
     const ip = String(req.body.ip || '').trim().slice(0, 64);
     if (!ip) return res.status(400).json({ error: 'Brak adresu IP.' });
-    const days = Math.min(Math.max(+req.body.days || 7, 1), 365);
-    ban = { id: crypto.randomUUID(), type: 'ip', value: ip, name: ip, reason: why, at: Date.now(), until: Date.now() + days * 86400e3 };
+    const hrs = Math.min(Math.max(+req.body.hours || (+req.body.days || 7) * 24, 1), 24 * 365);
+    ban = { id: crypto.randomUUID(), type: 'ip', value: ip, name: ip, reason: why, at: Date.now(), until: Date.now() + hrs * 3600e3 };
   } else return res.status(400).json({ error: 'Zły typ blokady.' });
   indexBan(ban); store.save('bans', ban);
   if (ban.type === 'user') {
@@ -1038,6 +1131,44 @@ app.post('/api/admin/ban', (req, res) => {
     for (const p of [...players.values()]) if (p.ip === ban.value) kickUser(p.user.id);
   }
   res.json(adminOverview());
+});
+app.get('/api/admin/stats', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const now = Date.now(); let reg = 0, guests = 0, a24 = 0, a7 = 0;
+  for (const u of users.values()) { if (isGuest(u)) guests++; else reg++; if (now - u.lastSeen < 86400e3) a24++; if (now - u.lastSeen < 7 * 86400e3) a7++; }
+  const live = [...players.values()].filter(q => q.ws), games = new Set(live.filter(q => q.game && !q.game.over).map(q => q.game));
+  let queued = 0; for (const k in queues) for (const d in queues[k]) queued += queues[k][d].length;
+  res.json({ registered: reg, guests, active24h: a24, active7d: a7, online: live.length, games: games.size, queued, rooms: rooms.size,
+             openReports: [...reports.values()].filter(r => r.status === 'open').length, openFeedback: [...feedback.values()].filter(f => f.status === 'open').length,
+             bans: [...banById.values()].filter(liveBan).length, season: meta.season, db: store.kind, uptimeMin: Math.round(process.uptime() / 60),
+             announce: meta.announce && meta.announce.until > now ? meta.announce : null });
+});
+app.post('/api/admin/warn', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  let u = users.get(String(req.body.userId || ''));
+  if (!u && req.body.name) u = users.get(nameIndex.get(String(req.body.name).toLowerCase()));
+  const text = String(req.body.text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 300);
+  if (!u || isGuest(u) && false) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  if (!text) return res.status(400).json({ error: 'Wpisz treść ostrzeżenia.' });
+  u.warning = { text, at: Date.now() }; saveU(u);
+  for (const r of reports.values()) if (r.target.id === u.id && r.status === 'open') { r.status = 'actioned'; store.save('reports', r); }
+  const q = players.get(u.id); if (q && q.ws) sendP(q, { type: 'warning', text });
+  res.json(adminOverview());
+});
+app.post('/api/admin/flags', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const u = users.get(String(req.body.userId || ''));
+  if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  u.flags = 0; saveU(u); res.json({ ok: true });
+});
+app.post('/api/admin/announce', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const text = String(req.body.text || '').replace(/[\u0000-\u001f]/g, ' ').trim().slice(0, 200);
+  const mins = Math.min(Math.max(+req.body.minutes || 60, 1), 1440);
+  meta.announce = text ? { text, until: Date.now() + mins * 60e3 } : null;
+  store.save('meta', meta);
+  for (const q of players.values()) if (q.ws) sendP(q, { type: 'announce', text: text, until: meta.announce ? meta.announce.until : 0 });
+  res.json({ ok: true, announce: meta.announce });
 });
 app.post('/api/admin/unban', (req, res) => {
   if (!adminAuth(req, res)) return;
@@ -1358,6 +1489,7 @@ async function main() {
   const data = await store.load();
   const loaded = data.users;
   if (data.meta && data.meta[0]) meta = data.meta[0];
+  for (const f of data.feedback || []) feedback.set(f.id, f);
   const firstRun = !meta.season;                    // pierwszy start po dodaniu sezonów
   for (const r of data.reports) reports.set(r.id, r);
   for (const b of data.bans) indexBan(b);

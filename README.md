@@ -4,6 +4,8 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 
 ## Funkcje
 
+- Strona **Jak grać** (`/zasady`) i formularz **Pomysł / błąd** (`/zglos`) ze zrzutem ekranu lub krótkim wideo.
+
 - **Poziomy:** Łatwy (blokada 2 s po błędzie), Średni (4 s), Trudny (10 s) oraz **Hardcore** (plansza z trudnego, bez blokady i bez sprawdzania cyfr: błąd zostaje na planszy, wygrywa pierwszy z całą poprawną planszą).
 - **Gra rankingowa** (tylko konta, Elo osobno na każdym poziomie) i **towarzyska** (każdy, bez rankingu).
 - **Goście:** nick `Guest1234`, bez rankingu i bez historii. Nicki są unikalne, a `Guest…` jest zarezerwowany dla gości.
@@ -56,9 +58,12 @@ Tabele (`users`, `reports`, `bans`, `meta`) tworzą się same. Konfiguracja Neon
 2. Wejdź na `https://twoja-gra.onrender.com/admin.html` i wpisz to hasło.
 3. Widzisz zgłoszenia pogrupowane po graczu (liczba zgłoszeń, powody, opisy, IP, ile meczów unieważnił system anty-botowy). Do wyboru:
    - **Zablokuj konto**: gracz jest od razu rozłączony, nie zaloguje się, znika z rankingu. Mecz, który właśnie grał, zostaje unieważniony dla przeciwnika.
-   - **Zablokuj IP (7 dni)**: dla gości i osób, które zakładają nowe konta. Uwaga: pod jednym IP może siedzieć wiele osób (szkoła, sieć komórkowa), więc używaj oszczędnie.
+   - **Zablokuj IP**: dla gości i osób, które zakładają nowe konta. Uwaga: pod jednym IP może siedzieć wiele osób (szkoła, sieć komórkowa), więc używaj oszczędnie.
    - **Odrzuć zgłoszenia**.
-4. Sekcja "Sprawdź gracza" pokazuje dane po nicku i pozwala zablokować go ręcznie. Lista blokad ma przycisk **Odblokuj**.
+   - Każda blokada ma **czas**: 1 godzina, 24 godziny, 3 dni, 7 dni, 30 dni lub na stałe (tylko konta). Gracz widzi, do kiedy jest zablokowany.
+   - **Ostrzeż**: gracz dostaje okno z Twoim komunikatem, które znika dopiero po kliknięciu „Rozumiem" (także po ponownym wejściu).
+4. Na górze panelu: **statystyki** (online, mecze, konta, aktywni 24 h/7 dni), **ogłoszenie dla graczy** (pasek na górze gry na 15 min – 24 h) oraz **pomysły i błędy od graczy** (zgłoszenia z zakładki „💡 Pomysł / błąd", ze zrzutem ekranu lub wideo do 30 s / 10 MB; przyciski Załatwione / Usuń). Załączniki trzymane są w Postgresie (tabela `media`) lub w folderze `media` obok `data.json`; łącznie do ok. 150 MB, starsze znikają. Zgłoszenia kasują się po 45 dniach (załatwione po 7).
+5. Sekcja "Sprawdź gracza" pokazuje dane po nicku i pozwala zablokować lub ostrzec go ręcznie oraz wyzerować licznik unieważnionych meczów. Lista blokad ma przycisk **Odblokuj**.
 
 Zgłoszenia starsze niż 60 dni (odrzucone: 7 dni) i wygasłe blokady IP kasują się same. Adresy IP są przechowywane tylko w zgłoszeniach i blokadach.
 

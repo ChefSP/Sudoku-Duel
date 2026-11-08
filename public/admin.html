@@ -23,6 +23,10 @@ button.sec{background:var(--panel2);color:var(--text)}button.red{background:var(
 .rep{border-top:1px solid var(--line);padding:8px 0;font-size:14px}
 .hidden{display:none!important}
 .err{color:var(--red);min-height:18px;margin-top:8px;font-size:14px}
+select,textarea{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:15px;margin-top:8px}
+.stats{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}.stat{background:var(--panel2);border-radius:8px;padding:8px}.stat b{display:block;font-size:20px}
+.fb img,.fb video{max-width:100%;max-height:360px;border-radius:8px;margin-top:8px;display:block}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;padding:16px;z-index:5}.modal .card{width:100%;max-width:380px;margin:0}
 table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;text-align:left;font-size:14px}th{color:var(--muted);font-weight:500}
 </style>
 </head>
@@ -43,6 +47,21 @@ table{width:100%;border-collapse:collapse}td,th{padding:6px 4px;text-align:left;
       <span class="muted" id="status"></span>
       <span><button class="sec" id="refresh">Odśwież</button> <button class="sec" id="logout">Wyloguj</button></span>
     </div>
+
+    <h2>📊 Przegląd</h2>
+    <div class="card"><div class="stats" id="stats"></div></div>
+
+    <h2>📢 Ogłoszenie dla graczy</h2>
+    <div class="card">
+      <input type="text" id="anText" maxlength="200" placeholder="np. Za 10 min przerwa techniczna">
+      <select id="anMin"><option value="15">na 15 min</option><option value="60" selected>na 1 godz.</option><option value="360">na 6 godz.</option><option value="1440">na 24 godz.</option></select>
+      <div class="row"><button id="anGo">Pokaż wszystkim</button><button class="sec" id="anOff">Wyłącz</button></div>
+      <div class="muted" id="anNow" style="margin-top:8px"></div>
+    </div>
+
+    <h2>💡 Pomysły i błędy od graczy</h2>
+    <div class="row" style="margin:0 0 8px"><button class="sec" id="fbAll">Wszystkie</button><button class="sec" id="fbOpen">Tylko otwarte</button></div>
+    <div id="fbList"></div>
 
     <h2>🚩 Otwarte zgłoszenia</h2>
     <div id="reports"></div>
@@ -83,7 +102,7 @@ async function load(){
   try { data = await api('overview'); } catch (e) {
     $('panel').classList.add('hidden'); $('login').classList.remove('hidden'); $('lerr').textContent = e.message; return false;
   }
-  $('login').classList.add('hidden'); $('panel').classList.remove('hidden'); render(); return true;
+  $('login').classList.add('hidden'); $('panel').classList.remove('hidden'); render(); loadStats(); loadFeedback(); return true;
 }
 function render(){
   $('status').textContent = 'Zgłoszeń do przejrzenia: ' + data.reports.length + ' · blokad: ' + data.bans.length;
@@ -101,7 +120,8 @@ function render(){
     const row = el.querySelector('.row');
     const mk = (txt, cls, fn) => { const b = document.createElement('button'); b.textContent = txt; if (cls) b.className = cls; b.onclick = fn; row.appendChild(b); };
     if (!g.banned) mk('🚫 Zablokuj konto', 'red', () => ban({ type:'user', userId: g.targetId }, g.name));
-    if (g.ip) mk('🌐 Zablokuj IP (7 dni)', 'red', () => ban({ type:'ip', ip: g.ip, days: 7 }, g.ip));
+    if (g.ip) mk('🌐 Zablokuj IP', 'red', () => ban({ type:'ip', ip: g.ip }, g.ip));
+    mk('⚠ Ostrzeż', 'sec', () => warn({ id: g.targetId, name: g.name }));
     mk('Odrzuć zgłoszenia', 'sec', () => act('dismiss', { targetId: g.targetId }));
     $('reports').appendChild(el);
   });
@@ -115,11 +135,65 @@ function render(){
 async function act(path, body){
   try { data = await api(path, body); render(); } catch (e) { alert(e.message); }
 }
-function ban(body, label){
-  const reason = prompt('Powód blokady „' + label + '” (widoczny dla gracza przy logowaniu):', body.type === 'ip' ? 'Naruszenie regulaminu' : 'Oszustwo / naruszenie regulaminu');
-  if (reason === null) return;
-  act('ban', Object.assign({ reason }, body));
+function modal(html){
+  const m = document.createElement('div'); m.className = 'modal'; m.innerHTML = '<div class="card">' + html + '</div>';
+  m.onclick = e => { if (e.target === m) m.remove(); }; document.body.appendChild(m); return m;
 }
+function ban(body, label){
+  const m = modal('<b>Blokada: ' + esc(label) + '</b><input type="text" id="bReason" placeholder="Powód (widzi go gracz)" value="' + (body.type === 'ip' ? 'Naruszenie regulaminu' : 'Oszustwo / naruszenie regulaminu') + '" style="margin-top:8px">'
+    + '<select id="bHours"><option value="1">1 godzina</option><option value="24">24 godziny</option><option value="72">3 dni</option><option value="168" selected>7 dni</option><option value="720">30 dni</option>' + (body.type === 'ip' ? '' : '<option value="0">Na stałe</option>') + '</select>'
+    + '<div class="row"><button class="red" id="bOk">Zablokuj</button><button class="sec" id="bNo">Anuluj</button></div>');
+  m.querySelector('#bNo').onclick = () => m.remove();
+  m.querySelector('#bOk').onclick = () => { const reason = m.querySelector('#bReason').value, hours = +m.querySelector('#bHours').value; m.remove(); act('ban', Object.assign({ reason, hours }, body)); };
+}
+function warn(u){
+  const m = modal('<b>Ostrzeżenie dla ' + esc(u.name) + '</b><textarea id="wTxt" rows="3" maxlength="300" placeholder="Treść – gracz zobaczy ją w oknie i musi kliknąć „Rozumiem”"></textarea>'
+    + '<div class="row"><button id="wOk">Wyślij</button><button class="sec" id="wNo">Anuluj</button></div>');
+  m.querySelector('#wNo').onclick = () => m.remove();
+  m.querySelector('#wOk').onclick = async () => { const text = m.querySelector('#wTxt').value.trim(); if (!text) return; m.remove(); await act('warn', { userId: u.id, text }); alert('Ostrzeżenie wysłane.'); };
+}
+const KIND = { bug: '🐞 Błąd', idea: '💡 Pomysł', other: '💬 Inne' };
+let fbOnlyOpen = false, blobs = [];
+async function loadStats(){
+  try {
+    const s = await api('stats');
+    const it = (n, v) => '<div class="stat"><span class="muted">' + n + '</span><b>' + v + '</b></div>';
+    $('stats').innerHTML = it('Online', s.online) + it('Mecze teraz', s.games) + it('W kolejce', s.queued) + it('Konta', s.registered) + it('Goście', s.guests) + it('Aktywni 24 h', s.active24h) + it('Aktywni 7 dni', s.active7d)
+      + it('Zgłoszenia', s.openReports) + it('Pomysły/błędy', s.openFeedback) + it('Blokady', s.bans) + it('Sezon', esc(s.season || '-')) + it('Baza', esc(s.db)) + it('Uptime', s.uptimeMin + ' min');
+    $('anNow').textContent = s.announce ? 'Aktywne: „' + s.announce.text + '” do ' + fmtT(s.announce.until) : 'Brak aktywnego ogłoszenia.';
+  } catch (e) { $('stats').textContent = e.message; }
+}
+async function loadFeedback(){
+  blobs.forEach(u => URL.revokeObjectURL(u)); blobs = [];
+  let list; try { list = await api('feedback'); } catch (e) { $('fbList').textContent = e.message; return; }
+  if (fbOnlyOpen) list = list.filter(f => f.status === 'open');
+  $('fbList').innerHTML = list.length ? '' : '<div class="card muted">Brak zgłoszeń.</div>';
+  list.forEach(f => {
+    const el = document.createElement('div'); el.className = 'card fb';
+    el.innerHTML = '<span class="tag' + (f.kind === 'bug' ? ' red' : '') + '">' + KIND[f.kind] + '</span><b>' + esc(f.name) + '</b> ' + (f.guest ? '<span class="tag">gość</span>' : '') + (f.status === 'done' ? '<span class="tag">załatwione</span>' : '')
+      + '<div class="muted">' + fmtT(f.at) + ' · ' + esc(f.ctx.screen) + ' · ' + esc(f.ctx.url) + '</div><div style="margin-top:6px;white-space:pre-wrap">' + esc(f.text) + '</div>'
+      + (f.ctx.ua ? '<div class="muted" style="margin-top:4px;word-break:break-all">' + esc(f.ctx.ua) + '</div>' : '')
+      + (f.media && f.media.gone ? '<div class="muted">Załącznik został usunięty (limit miejsca).</div>' : '')
+      + (f.media && f.media.id ? '<div class="row"><button class="sec" data-m="1">📎 Pokaż załącznik (' + (f.media.mime.startsWith('video') ? 'wideo' : 'zrzut') + ', ' + Math.round(f.media.size / 1024) + ' KB)</button></div><div class="mediaBox"></div>' : '')
+      + '<div class="row"><button class="sec" data-s="1">' + (f.status === 'done' ? 'Otwórz ponownie' : '✔ Załatwione') + '</button><button class="red" data-d="1">Usuń</button></div>';
+    const mb = el.querySelector('[data-m]');
+    if (mb) mb.onclick = async () => {
+      try {
+        const r = await fetch('/api/admin/media/' + f.media.id, { headers: { 'x-admin-key': key } }); if (!r.ok) throw new Error('Brak pliku');
+        const url = URL.createObjectURL(await r.blob()); blobs.push(url);
+        const box = el.querySelector('.mediaBox'); box.innerHTML = '';
+        const n = document.createElement(f.media.mime.startsWith('video') ? 'video' : 'img'); n.src = url; if (n.tagName === 'VIDEO') n.controls = true; box.appendChild(n); mb.remove();
+      } catch (e) { alert(e.message); }
+    };
+    el.querySelector('[data-s]').onclick = async () => { try { await api('feedback/status', { id: f.id, status: f.status === 'done' ? 'open' : 'done' }); loadFeedback(); loadStats(); } catch (e) { alert(e.message); } };
+    el.querySelector('[data-d]').onclick = async () => { if (!confirm('Usunąć zgłoszenie razem z załącznikiem?')) return; try { await api('feedback/delete', { id: f.id }); loadFeedback(); loadStats(); } catch (e) { alert(e.message); } };
+    $('fbList').appendChild(el);
+  });
+}
+$('fbAll').onclick = () => { fbOnlyOpen = false; loadFeedback(); };
+$('fbOpen').onclick = () => { fbOnlyOpen = true; loadFeedback(); };
+$('anGo').onclick = async () => { try { await api('announce', { text: $('anText').value, minutes: +$('anMin').value }); $('anText').value = ''; loadStats(); } catch (e) { alert(e.message); } };
+$('anOff').onclick = async () => { try { await api('announce', { text: '' }); loadStats(); } catch (e) { alert(e.message); } };
 
 $('go').onclick = async () => {
   key = $('key').value; try { sessionStorage.setItem('akey', key); } catch {}
@@ -135,8 +209,10 @@ $('qgo').onclick = async () => {
     $('qres').innerHTML = '<b style="color:var(--text)">' + esc(u.name) + '</b> ' + (u.guest ? '<span class="tag">gość</span>' : '') + (u.banned ? '<span class="tag red">zablokowany</span>' : '')
       + '<div>Założone: ' + fmtT(u.createdAt) + ' · ostatnio: ' + fmtT(u.lastSeen) + ' · mecze rankingowe: ' + u.ranked + ' · unieważnione: ' + u.flags + '</div>'
       + '<div>' + Object.entries(u.stats).map(([d, s]) => esc(d) + ': Elo ' + s.elo + ' (' + s.wins + '/' + s.losses + ')').join(' · ') + '</div>'
-      + (u.banned ? '' : '<div class="row"><button class="red" id="qban">🚫 Zablokuj konto</button></div>');
+      + '<div class="row">' + (u.banned ? '' : '<button class="red" id="qban">🚫 Zablokuj konto</button>') + '<button class="sec" id="qwarn">⚠ Ostrzeż</button>' + (u.flags ? '<button class="sec" id="qflag">Wyzeruj unieważnione (' + u.flags + ')</button>' : '') + '</div>';
     const b = $('qban'); if (b) b.onclick = () => ban({ type:'user', userId: u.id }, u.name);
+    $('qwarn').onclick = () => warn(u);
+    const fl = $('qflag'); if (fl) fl.onclick = async () => { try { await api('flags', { userId: u.id }); $('qgo').click(); } catch (e) { alert(e.message); } };
   } catch (e) { $('qres').textContent = e.message; }
 };
 if (key) load();
