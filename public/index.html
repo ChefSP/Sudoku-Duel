@@ -90,6 +90,7 @@ tr:nth-child(even) td{background:rgba(127,127,127,.08)}
 @keyframes pulse{50%{opacity:.4}}
 #gbtn{display:flex;justify-content:center;margin-top:12px}
 #banner{position:fixed;top:0;left:0;right:0;background:var(--red);color:#fff;text-align:center;padding:8px;font-weight:700;z-index:20}
+#timer.low{color:var(--red)}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#000c;border:1px solid var(--line);color:#fff;padding:10px 16px;border-radius:10px;z-index:30;max-width:90%;text-align:center;font-size:14px}
 #roomLink{font-size:14px;text-align:center}
 
@@ -223,6 +224,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
       <b>Poziom trudności</b>
       <div class="seg" id="diffSeg"></div>
       <div class="info" id="diffInfo"></div>
+      <div id="secWrap" class="hidden" style="margin-top:12px"><b>Czas gry</b><div class="seg" id="secSeg"></div></div>
       <div id="kindWrap">
         <div class="seg" id="kindSeg">
           <button id="kRanked">🏆 Rankingowa</button>
@@ -241,6 +243,12 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
         <button class="sec" id="soloBtn">🧩 Solo</button>
         <button class="sec" id="friendBtn">👥 Ze znajomym</button>
       </div>
+      <div id="botWrap" style="margin-top:16px;border-top:1px solid var(--line);padding-top:12px">
+        <b>🤖 Trening z botem</b>
+        <div class="seg" id="botSeg" style="margin-top:6px"></div>
+        <div class="info" id="botInfo"></div>
+        <button class="sec" id="botBtn">🤖 Graj z botem</button>
+      </div>
     </div>
   </div>
 
@@ -255,6 +263,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
         <button class="sec hidden" id="shareBtn">📤 Udostępnij</button>
       </div>
     </div>
+    <button class="hidden" id="botOffer" style="margin-bottom:10px">🤖 Nikogo nie ma? Zagraj z botem</button>
     <button class="sec" id="cancel">Anuluj</button>
   </div>
 
@@ -393,7 +402,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 <script>
 const $ = id => document.getElementById(id);
 const screens = ['menu','mode','searching','game','result','profile','daily','friends'];
-function show(s){ screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
+function show(s){ if (s !== 'searching'){ clearTimeout(offerT); $('botOffer').classList.add('hidden'); } screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
   get(k){ try { return window[area].getItem(k); } catch { return null; } },
@@ -464,12 +473,20 @@ const MODES = {
   classic: { label: '🧩 Klasyczna', short: '', info: 'Pierwszy, kto wypełni całą planszę.' },
   blitz:   { label: '⚡ Blitz',     short: '⚡ Blitz',  info: '3 plansze pod rząd. Wygrywa ten, kto pierwszy weźmie 2 z 3. Bez rankingu.' },
   line:    { label: '📏 Linie',     short: '📏 Linie',  info: 'Wygrywa pierwszy, kto skompletuje 3 rzędy, kolumny lub bloki 3×3 (liczą się te z co najmniej 4 pustymi polami). Bez rankingu.' },
-  sprint:  { label: '🏁 Sprint',    short: '🏁 Sprint', info: 'Wygrywa pierwszy, kto wstawi 20 poprawnych cyfr. Bez rankingu.' }
+  sprint:  { label: '🏁 Sprint',    short: '🏁 Sprint', info: 'Wygrywa pierwszy, kto wstawi 20 poprawnych cyfr. Bez rankingu.' },
+  rush:    { label: '⏱ Na czas',    short: '⏱ Na czas', info: 'Wybierasz czas gry. Wygrywa ten, kto w tym czasie wstawi więcej poprawnych cyfr. Skończysz planszę, od razu dostajesz następną (rywal gra swoją). Błąd = blokada jak zwykle. Bez rankingu.' }
 };
-const SLUG = { classic: 'klasyczna', blitz: 'blitz', line: 'linie', sprint: 'sprint' };
+const SLUG = { classic: 'klasyczna', blitz: 'blitz', line: 'linie', sprint: 'sprint', rush: 'na-czas' };
 const MODE_BY_SLUG = Object.fromEntries(Object.entries(SLUG).map(([k, v]) => [v, k]));
-const TILE_SUB = { classic: 'Pierwszy, kto wypełni planszę. Ranking Elo.', blitz: '3 plansze, wygrywa 2 z 3', line: 'Skompletuj 3 linie', sprint: '20 cyfr jak najszybciej' };
+const TILE_SUB = { classic: 'Pierwszy, kto wypełni planszę. Ranking Elo.', blitz: '3 plansze, wygrywa 2 z 3', line: 'Skompletuj 3 linie', sprint: '20 cyfr jak najszybciej', rush: 'Kto więcej w 30 s – 5 min' };
 const MODE_WIN = { blitz: 'serię', line: '3 linie', sprint: '20 cyfr' };
+const SECS = [30, 60, 120, 300];
+const fmtSecs = s => s < 60 ? s + ' s' : (s / 60) + ' min';
+const modeTxt = (mode, secs) => !mode || mode === 'classic' ? '' : MODES[mode].short + (mode === 'rush' && secs ? ' ' + fmtSecs(secs) : '');
+let curSecs = +store.get('secs'); if (!SECS.includes(curSecs)) curSecs = 60;
+const BOT_LV = { novice: ['Początkujący', 'Wolny i myli się częściej.'], mid: ['Średni', 'Gra w ludzkim tempie, czasem się myli.'], pro: ['Mistrz', 'Szybki i prawie się nie myli.'] };
+let botLevel = store.get('botlvl'); if (!BOT_LV[botLevel]) botLevel = 'mid';
+let offerT = null;
 function renderRankInfo(s){
   const el = $('rankInfo'), i = rankIdx(s.elo), r = RANKS[i], nx = RANKS[i + 1];
   const base = i === 0 ? 900 : r.min;
@@ -495,7 +512,7 @@ let routed = false;
 function nav(path){ if (location.pathname !== path) history.pushState(null, '', path); route(); }
 function route(){
   if (G) return;                                              // w trakcie gry adres nie zmienia ekranu
-  const p = location.pathname.replace(/\/+$/, '') || '/', m = p.match(/^\/tryb\/([a-z]+)$/);
+  const p = location.pathname.replace(/\/+$/, '') || '/', m = p.match(/^\/tryb\/([a-z-]+)$/);
   if (p === '/zagadka') return openDaily();
   if (p === '/znajomi'){ if (me && !me.guest) return openFriends(); history.replaceState(null, '', '/'); }
   else if (m && MODE_BY_SLUG[m[1]]){ gmode = MODE_BY_SLUG[m[1]]; store.set('gmode', gmode); renderMode(); show('mode'); return; }
@@ -528,14 +545,16 @@ function onMsg(m){
   else if (m.type === 'online') $('online').textContent = '🟢 online: ' + m.n;
   else if (m.type === 'queued'){
     $('searchTitle').textContent = 'Szukam przeciwnika…';
-    $('searchSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : m.ranked ? ' · rankingowa' : ' · towarzyska');
+    $('searchSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + modeTxt(m.mode, m.secs) : m.ranked ? ' · rankingowa' : ' · towarzyska');
     $('roomBox').classList.add('hidden'); show('searching');
+    clearTimeout(offerT); $('botOffer').classList.add('hidden');
+    if (!m.ranked && !DIFFS[m.diff].blind) offerT = setTimeout(() => { if (!$('searching').classList.contains('hidden')) $('botOffer').classList.remove('hidden'); }, 20000);
   }
   else if (m.type === 'room') showRoom(m);
   else if (m.type === 'friends'){ fr = m; updateFrBtn(); if (!$('friends').classList.contains('hidden')) renderFriends(); }
   else if (m.type === 'challengeSent'){
     $('searchTitle').textContent = 'Czekam na odpowiedź…';
-    $('searchSub').textContent = 'Wyzwanie dla ' + m.name + ' · ' + DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : '') + ' · bez rankingu';
+    $('searchSub').textContent = 'Wyzwanie dla ' + m.name + ' · ' + DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + modeTxt(m.mode, m.secs) : '') + ' · bez rankingu';
     $('roomBox').classList.add('hidden'); show('searching');
   }
   else if (m.type === 'challenge') showChallenge(m);
@@ -545,8 +564,14 @@ function onMsg(m){
   else if (m.type === 'ok'){
     G.cur[sel2idx(m)] = m.v; if (m.v) placed(sel2idx(m), m.v);
     G.myP = m.prog != null ? m.prog : m.filled; setCnt();
-    $('meBar').style.width = (G.myP / (G.goal || G.empties) * 100) + '%'; render();
+    setBars(); render();
     if (m.v){ Snd(G.blind ? 'place' : 'ok'); afterPlace(sel2idx(m)); }
+  }
+  else if (m.type === 'board' && G && G.rush){
+    G.puzzle = m.puzzle; G.cur = m.cur.slice(); G.empties = m.empties; G.sig = m.puzzle.join(''); G.rush.n = m.n; G.myP = m.prog;
+    notes = new Array(81).fill(0); sel = -1; saveNotes(); setCnt(); setBars(); render();
+    toast('✅ Plansza skończona! Kolejna czeka.'); Snd('unit');
+    $('oppElo').textContent = $('oppElo').textContent.replace(/plansza \d+/, 'plansza ' + (m.n + 1));
   }
   else if (m.type === 'wrong'){
     lockUntil = Date.now() + m.lockMs; flash(m.r*9+m.c); Snd('wrong');
@@ -554,7 +579,7 @@ function onMsg(m){
   else if (m.type === 'full') toast('Plansza jest pełna, ale gdzieś jest błąd. Szukaj dalej!');
   else if (m.type === 'opp'){
     if (G){ G.oppP = m.prog != null ? m.prog : m.filled; setCnt(); }
-    $('oppBar').style.width = ((m.prog != null ? m.prog : m.filled) / (G.goal || G.empties) * 100) + '%';
+    setBars();
     if (G && m.cell != null){ G.oppMask[m.cell] = m.on; renderMini(); }
   }
   else if (m.type === 'emote') showEmote(m);
@@ -605,10 +630,25 @@ function renderMode(){
     b.onclick = () => { curDiff = d; store.set('diff', d); renderMode(); };
     $('diffSeg').appendChild(b);
   }
+  $('secWrap').classList.toggle('hidden', gmode !== 'rush');
+  $('secSeg').innerHTML = '';
+  for (const n of SECS){
+    const b = document.createElement('button'); b.textContent = fmtSecs(n); b.className = n === curSecs ? 'on' : '';
+    b.onclick = () => { curSecs = n; store.set('secs', String(n)); renderMode(); };
+    $('secSeg').appendChild(b);
+  }
+  $('botSeg').innerHTML = '';
+  for (const k of Object.keys(BOT_LV)){
+    const b = document.createElement('button'); b.textContent = BOT_LV[k][0]; b.className = k === botLevel ? 'on' : '';
+    b.onclick = () => { botLevel = k; store.set('botlvl', k); renderMode(); };
+    $('botSeg').appendChild(b);
+  }
+  $('botInfo').textContent = DIFFS[curDiff].blind ? 'Z botem nie gramy w Hardcore.' : BOT_LV[botLevel][1] + ' Bez rankingu.';
+  $('botBtn').disabled = !!DIFFS[curDiff].blind;
   const D = DIFFS[curDiff];
   $('diffInfo').textContent = D.blind
     ? 'Trudna plansza, bez blokady i bez sprawdzania cyfr: błąd zostaje na planszy i sam musisz go znaleźć.'
-    : 'Błędna cyfra blokuje Cię na ' + D.lock / 1000 + ' s.';
+    : 'Błędna cyfra blokuje Cię na ' + D.lock + ' s.';
   const guest = !me || me.guest;
   if (guest) kind = 'casual';
   const rk = kind === 'ranked' && !special;
@@ -619,7 +659,7 @@ function renderMode(){
   $('kCasual').classList.toggle('on', !rk);
   $('kindInfo').textContent = guest ? 'Gra rankingowa wymaga konta – zaloguj się.'
     : kind === 'ranked' ? 'Liczy się do rankingu Elo.' : 'Bez wpływu na ranking.';
-  $('play').textContent = special ? '⚔ Szukaj przeciwnika (bez rankingu)' : '⚔ Szukaj przeciwnika';
+  $('play').textContent = special ? '⚔ Szukaj przeciwnika' + (gmode === 'rush' ? ' (' + fmtSecs(curSecs) + ', bez rankingu)' : ' (bez rankingu)') : '⚔ Szukaj przeciwnika';
   $('statsBox').classList.toggle('hidden', guest || !rk);
   const s = me && me.stats[curDiff] ? me.stats[curDiff] : { elo: 1000, wins: 0, losses: 0 };
   $('elo').textContent = s.elo; $('wins').textContent = s.wins; $('losses').textContent = s.losses;
@@ -794,8 +834,15 @@ function confetti(){
 
 function setCnt(){
   if (!G) return; const g = G.goal || G.empties;
+  if (G.rush){ $('meCnt').textContent = 'pola: ' + G.myP; $('oppCnt').textContent = 'pola: ' + G.oppP; return; }
   $('meCnt').textContent = G.myP != null ? G.myP + '/' + g : '';
   $('oppCnt').textContent = G.oppP != null ? G.oppP + '/' + g : '';
+}
+function setBars(){
+  if (!G) return;
+  const mx = G.goal || (G.rush ? Math.max(G.myP, G.oppP, 10) : G.empties);
+  $('meBar').style.width = Math.min(100, G.myP / mx * 100) + '%';
+  $('oppBar').style.width = Math.min(100, G.oppP / mx * 100) + '%';
 }
 function startMatch(m){
   hideChal();
@@ -806,27 +853,28 @@ function startMatch(m){
         oppMask: m.oppMask ? m.oppMask.slice() : new Array(81).fill(0) };
   G.myP = m.prog != null ? m.prog : m.filled; G.oppP = m.oppProg != null ? m.oppProg : m.oppFilled;
   if (mode === 'line') G.units = lineUnits(m.puzzle);
+  if (mode === 'rush') G.rush = { dur: m.rush.secs * 1000, n: m.rush.n };
   notes = new Array(81).fill(0);
   try { const s = JSON.parse(sess.get('notes') || 'null'); if (s && s.sig === sig) notes = s.notes; } catch {}
   setNoteMode(false);
   sel = -1; lockUntil = Date.now() + (m.lockMs || 0);
-  const kindTxt = mode !== 'classic' ? MODES[mode].short + (m.friend ? ' · ze znajomym' : '')
+  const kindTxt = mode !== 'classic' ? modeTxt(mode, m.rush && m.rush.secs) + (m.friend ? ' · ze znajomym' : '') + (m.opp.bot ? ' · bot' : '')
+    + (mode === 'rush' ? ' · plansza ' + (m.rush.n + 1) : '')
     + (mode === 'blitz' ? ' · plansza ' + m.round + '/' + m.rounds + ' · ' + m.score[0] + ':' + m.score[1] : '')
-    : m.friend ? 'ze znajomym' : m.ranked ? 'rankingowa' : 'towarzyska';
+    : (m.friend ? 'ze znajomym' : m.ranked ? 'rankingowa' : 'towarzyska') + (m.opp.bot ? ' · bot' : '');
   if (m.roundWinner) toast((m.roundWinner === 'me' ? 'Ta plansza jest Twoja! 🎉' : 'Rywal był szybszy na tej planszy.') + ' Wynik ' + m.score[0] + ':' + m.score[1]);
   $('oppName').textContent = m.opp.name;
   $('oppElo').textContent = DIFFS[m.diff].label + ' · ' + kindTxt + (m.opp.elo != null ? ' · ' + rankOf(m.opp.elo).icon + ' Elo ' + m.opp.elo : '');
   $('oppProg').classList.remove('hidden');
-  $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); renderMini(); $('chatBtn').classList.remove('hidden');
-  $('oppBar').style.width = ((m.oppProg != null ? m.oppProg : m.oppFilled) / G.goal * 100) + '%';
-  $('meBar').style.width = ((m.prog != null ? m.prog : m.filled) / G.goal * 100) + '%';
+  $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); renderMini(); $('chatBtn').classList.toggle('hidden', !!m.opp.bot);
+  setBars();
   $('oppnote').textContent = ''; clearInterval(oppT);
   if (m.oppOnline === false) oppStatus({ online: false, graceMs: 30000 });
   $('eraseBtn').classList.toggle('hidden', !m.blind);
-  $('reportGame').classList.remove('hidden');
+  $('reportGame').classList.toggle('hidden', !!m.opp.bot);
   $('resign').textContent = 'Poddaj się';
   $('lock').textContent = ''; banner('');
-  lastPlay = { kind: 'queue', diff: m.diff, ranked: m.ranked && !m.friend, mode };
+  lastPlay = m.opp.bot ? { kind: 'bot', diff: m.diff, mode, secs: m.rush && m.rush.secs, level: botLevel } : { kind: 'queue', diff: m.diff, ranked: m.ranked && !m.friend, mode, secs: m.rush && m.rush.secs };
   setCnt(); render(); show('game');
   startTimer(performance.now() - m.elapsed);        // elapsed < 0 = trwa odliczanie
 }
@@ -845,7 +893,8 @@ function startTimer(t0){
     }
     if (lastN !== null && !goShown){ goShown = true; ov.textContent = 'START!'; pop(); Snd('go'); setTimeout(() => ov.classList.add('hidden'), 650); }
     else if (lastN === null) ov.classList.add('hidden');
-    $('timer').textContent = fmt(el);
+    $('timer').textContent = G && G.rush ? fmt(Math.max(0, G.rush.dur - el) + 999) : fmt(el);
+    $('timer').classList.toggle('low', !!(G && G.rush && G.rush.dur - el < 10000));
     if (!G || (G.solo && !G.solo.daily)){ $('lock').textContent = ''; return; }
     const rem = lockUntil - Date.now();
     $('lock').textContent = rem > 0 ? '⛔ Blokada: ' + Math.ceil(rem/1000) + 's' : '';
@@ -1009,7 +1058,7 @@ function soloMove(v){
     if (S.filled >= G.empties) soloFinish();
   } else {
     S.errors++; flash(sel); Snd('wrong'); updateSoloInfo(); saveDaily();
-    if (S.daily && DIFFS[G.diff].lock) lockUntil = Date.now() + DIFFS[G.diff].lock;      // w zagadce dnia błąd blokuje jak w grze
+    if (S.daily && DIFFS[G.diff].lock) lockUntil = Date.now() + DIFFS[G.diff].lock * 1000;      // w zagadce dnia błąd blokuje jak w grze
   }
 }
 function saveDaily(){
@@ -1063,6 +1112,7 @@ function endMatch(m){
       ? (m.mode === 'blitz' ? (m.won ? 'Wygrałeś serię ' : 'Przegrałeś serię ') + (m.score ? m.score[0] + ':' + m.score[1] : '')
         : (m.won ? 'Pierwszy skończyłeś: ' : 'Przeciwnik był pierwszy: ') + MODE_WIN[m.mode])
       : m.won ? 'Rozwiązałeś pierwszy' : 'Przeciwnik rozwiązał pierwszy',
+    time: (m.won ? 'Czas minął, masz więcej pól ' : 'Czas minął, rywal ma więcej pól ') + (m.score ? m.score[0] + ':' + m.score[1] : '') + (m.tie ? ' (remis, rozstrzygnęły błędy i tempo)' : ''),
     resign: m.won ? 'Przeciwnik się poddał' : 'Poddałeś się',
     disconnect: m.won ? 'Przeciwnik się rozłączył' : 'Rozłączono na zbyt długo',
     banned: 'Przeciwnik został zablokowany'
@@ -1085,32 +1135,39 @@ function endMatch(m){
     }
   } else {
     $('resElo').textContent = fmt(m.ms);
-    $('resDelta').textContent = (m.mode && m.mode !== 'classic' ? MODES[m.mode].short + (m.friend ? ' ze znajomym' : '') : m.friend ? 'Pojedynek ze znajomym' : 'Gra towarzyska') + ' – ranking bez zmian';
+    $('resDelta').textContent = (m.mode && m.mode !== 'classic' ? modeTxt(m.mode, m.secs) + (m.bot ? ' z botem' : '') + (m.friend ? ' ze znajomym' : '') : m.bot ? 'Gra z botem' : m.friend ? 'Pojedynek ze znajomym' : 'Gra towarzyska') + ' – ranking bez zmian';
     $('resDelta').className = 'neutral';
   }
   if (!m.void) { if (m.won){ Snd('win'); confetti(); } else Snd('lose'); }
   const rb = $('rematch'); rb.classList.remove('hidden'); rb.disabled = false; rb.className = ''; rb.textContent = '🔁 Rewanż';
-  $('reportRes').classList.remove('hidden'); $('chatRes').classList.remove('hidden');
-  $('again').textContent = '⚔ Szukaj nowego przeciwnika';
+  $('reportRes').classList.toggle('hidden', !!m.bot); $('chatRes').classList.toggle('hidden', !!m.bot);
+  $('again').textContent = m.bot ? '🤖 Zagraj z botem jeszcze raz' : '⚔ Szukaj nowego przeciwnika';
   show('result');
 }
 
 // ---------- przyciski ----------
-function queueWith(diff, ranked, mode){
+function queueWith(diff, ranked, mode, secs){
   mode = mode || 'classic';
   if ((me && me.guest) || mode !== 'classic') ranked = false;
-  lastPlay = { kind: 'queue', diff, ranked, mode };
-  tx({ type:'queue', diff, ranked, mode });
+  lastPlay = { kind: 'queue', diff, ranked, mode, secs };
+  tx({ type:'queue', diff, ranked, mode, secs });
 }
-$('play').onclick = () => queueWith(curDiff, kind === 'ranked', gmode);
+function startBot(o){
+  lastPlay = { kind: 'bot', diff: o.diff, mode: o.mode, secs: o.secs, level: o.level };
+  tx({ type:'bot', diff: o.diff, mode: o.mode, secs: o.secs, level: o.level });
+}
+$('play').onclick = () => queueWith(curDiff, kind === 'ranked', gmode, curSecs);
+$('botBtn').onclick = () => startBot({ diff: curDiff, mode: gmode, secs: curSecs, level: botLevel });
+$('botOffer').onclick = () => { const L = lastPlay || {}; startBot({ diff: L.diff || curDiff, mode: L.mode || 'classic', secs: L.secs || curSecs, level: botLevel }); };
 $('soloBtn').onclick = () => startSolo(curDiff);
-$('friendBtn').onclick = () => tx({ type:'room', diff: curDiff, mode: gmode });
+$('friendBtn').onclick = () => tx({ type:'room', diff: curDiff, mode: gmode, secs: curSecs });
 $('cancel').onclick = () => tx({ type:'cancel' });
 $('rematch').onclick = () => tx({ type:'rematch' });
 $('again').onclick = () => {
   if (lastPlay && lastPlay.kind === 'daily') nav('/zagadka');
   else if (lastPlay && lastPlay.kind === 'solo') startSolo(lastPlay.diff);
-  else if (lastPlay) queueWith(lastPlay.diff, lastPlay.ranked, lastPlay.mode);
+  else if (lastPlay && lastPlay.kind === 'bot') startBot(lastPlay);
+  else if (lastPlay) queueWith(lastPlay.diff, lastPlay.ranked, lastPlay.mode, lastPlay.secs);
 };
 $('toMenu').onclick = () => { if (!lastPlay || (lastPlay.kind !== 'solo' && lastPlay.kind !== 'daily')) tx({ type:'leave' }); route(); };
 $('resign').onclick = () => {
@@ -1122,7 +1179,7 @@ $('resign').onclick = () => {
 function showRoom(m){
   const link = location.origin + '/?room=' + m.code;
   $('searchTitle').textContent = 'Czekam na znajomego…';
-  $('searchSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : '') + ' · bez rankingu · link ważny ' + Math.round((m.ttl || 600000) / 60000) + ' min';
+  $('searchSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + modeTxt(m.mode, m.secs) : '') + ' · bez rankingu · link ważny ' + Math.round((m.ttl || 600000) / 60000) + ' min';
   $('roomLink').value = link; $('roomBox').classList.remove('hidden');
   $('shareBtn').classList.toggle('hidden', !navigator.share);
   show('searching');
@@ -1157,7 +1214,7 @@ function renderDaily(){
   const done = st.done[dDiff], run = st.running[dDiff];
   $('dCard').innerHTML = done
     ? '<div class="big win" style="font-size:26px">✅ ' + fmt(done.ms) + '</div><div class="info">Twoje miejsce dziś: #' + done.rank + '. Wróć jutro po nową zagadkę.</div>'
-    : '<div class="info">' + (run ? 'Masz rozpoczętą zagadkę – zegar cały czas liczy. ' : '') + (DIFFS[dDiff].blind ? 'Hardcore: bez sprawdzania cyfr. ' : 'Błąd = blokada ' + DIFFS[dDiff].lock / 1000 + ' s. ') + '</div><button id="dPlay">' + (run ? '▶ Kontynuuj' : '▶ Zagraj') + '</button>';
+    : '<div class="info">' + (run ? 'Masz rozpoczętą zagadkę – zegar cały czas liczy. ' : '') + (DIFFS[dDiff].blind ? 'Hardcore: bez sprawdzania cyfr. ' : 'Błąd = blokada ' + DIFFS[dDiff].lock + ' s. ') + '</div><button id="dPlay">' + (run ? '▶ Kontynuuj' : '▶ Zagraj') + '</button>';
   const pb = $('dPlay'); if (pb) pb.onclick = () => startSolo(dDiff, true);
 }
 async function loadDailyBoard(){
@@ -1188,7 +1245,7 @@ function frRow(name, dot, btns){
   return el;
 }
 function renderFriends(){
-  $('fChalInfo').textContent = 'Wyzwanie zagrasz na: ' + DIFFS[curDiff].label + (gmode !== 'classic' ? ' · ' + MODES[gmode].short : '') + ' (zmienisz w menu). Bez rankingu.';
+  $('fChalInfo').textContent = 'Wyzwanie zagrasz na: ' + DIFFS[curDiff].label + (gmode !== 'classic' ? ' · ' + modeTxt(gmode, curSecs) : '') + ' (zmienisz na stronie trybu). Bez rankingu.';
   const fill = (id, rows, cardId, empty) => {
     const box = $(id); box.innerHTML = '';
     rows.forEach(r => box.appendChild(r));
@@ -1198,7 +1255,7 @@ function renderFriends(){
   fill('fIn', fr.incoming.map(n => frRow(n, null, [
     ['Przyjmij', '', () => tx({ type:'faccept', name:n })], ['✕', 'x', () => tx({ type:'fdecline', name:n })]])), 'fInCard');
   fill('fList', fr.friends.map(f => frRow(f.name, f.online ? (f.busy ? 'busy' : 'on') : '', [
-    [f.busy ? 'W grze' : 'Wyzwij', f.online && !f.busy ? '' : 'sec', () => tx({ type:'challenge', name:f.name, diff:curDiff, mode:gmode }), !f.online || f.busy],
+    [f.busy ? 'W grze' : 'Wyzwij', f.online && !f.busy ? '' : 'sec', () => tx({ type:'challenge', name:f.name, diff:curDiff, mode:gmode, secs:curSecs }), !f.online || f.busy],
     ['✕', 'x', () => { if (confirm('Usunąć ' + f.name + ' ze znajomych?')) tx({ type:'fremove', name:f.name }); }]])), null, 'Jeszcze nikogo tu nie ma. Wpisz nick znajomego powyżej i wyślij zaproszenie.');
   fill('fOut', fr.outgoing.map(n => frRow(n, null, [['Cofnij', 'sec', () => tx({ type:'fcancel', name:n })]])), 'fOutCard');
 }
@@ -1215,7 +1272,7 @@ function showChallenge(m){
   $('chalTxt').textContent = '⚔ ' + m.from + ' wyzywa Cię!';
   const upd = () => {
     const left = Math.ceil((end - Date.now()) / 1000); if (left <= 0) return hideChal();
-    $('chalSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + MODES[m.mode].short : ' · klasyczna') + ' · bez rankingu · jeszcze ' + left + ' s';
+    $('chalSub').textContent = DIFFS[m.diff].label + (m.mode && m.mode !== 'classic' ? ' · ' + modeTxt(m.mode, m.secs) : ' · klasyczna') + ' · bez rankingu · jeszcze ' + left + ' s';
   };
   clearInterval(chalT); upd(); chalT = setInterval(upd, 500);
   $('chal').classList.remove('hidden'); Snd('beep');
@@ -1226,7 +1283,7 @@ $('chalNo').onclick = () => { if (chalFrom) tx({ type:'cdecline', from: chalFrom
 // ---------- statystyki i historia ----------
 let prof = null, pDiff = null;
 let lbd = store.get('lbdiff'); if (!DIFFS[lbd]) lbd = 'medium';
-const MODE_ICON = { ranked: '🏆', casual: '🤝', friend: '👥', blitz: '⚡', line: '📏', sprint: '🏁' };
+const MODE_ICON = { ranked: '🏆', casual: '🤝', friend: '👥', blitz: '⚡', line: '📏', sprint: '🏁', rush: '⏱', bot: '🤖' };
 function fmtMs(ms){ return ms ? fmt(ms) : '–'; }
 async function openProfile(){
   pDiff = curDiff; show('profile'); $('pStats').innerHTML = ''; $('hist').innerHTML = ''; $('chart').innerHTML = '<div class="info">Ładowanie…</div>';
@@ -1260,7 +1317,7 @@ function renderProfile(){
   const rows = prof.history.map((h, i) => {
     const when = new Date(h.t).toLocaleString('pl-PL', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
     const res = h.void ? '<span class="v">unieważn.</span>' : h.won ? '<span class="w">W</span>' : '<span class="l">P</span>';
-    const why = h.reason === 'resign' ? ' 🏳' : h.reason === 'disconnect' ? ' 📡' : '';
+    const why = (h.sc ? ' ' + h.sc[0] + ':' + h.sc[1] : '') + (h.reason === 'resign' ? ' 🏳' : h.reason === 'disconnect' ? ' 📡' : '');
     const d = h.void || h.delta === 0 || h.elo == null ? '–' : (h.delta > 0 ? '+' : '') + h.delta;
     return '<tr class="' + (h.puz ? 'hrow' : '') + '" data-i="' + i + '"><td>' + when + '</td><td>' + esc(h.opp) + '</td><td>' + (DIFFS[h.diff] ? DIFFS[h.diff].label : h.diff) + '</td><td>' + (MODE_ICON[h.mode] || '') + '</td><td>' + res + why + '</td><td>' + fmt(h.ms) + '</td><td>' + d + '</td></tr>';
   }).join('');
@@ -1340,7 +1397,7 @@ for (let i = 0; i < 81; i++){
   $('mini').appendChild(e); miniCells.push(e);
 }
 function renderMini(){
-  const on = !!(G && !G.solo && settings.preview);
+  const on = !!(G && !G.solo && !G.rush && settings.preview);
   $('mini').classList.toggle('hidden', !on);
   if (!on){ $('mini').classList.remove('big'); $('minilbl').classList.add('hidden'); return; }
   for (let i = 0; i < 81; i++){

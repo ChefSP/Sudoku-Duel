@@ -21,7 +21,10 @@ const DIFFS = {
   hardcore: { label: 'Hardcore', remove: 55, lock: 0, blind: true }   // bez blokady i bez sprawdzania cyfr
 };
 // tryby gry (na razie wszystkie poza klasycznym są bez rankingu)
-const MODES = ['classic', 'blitz', 'line', 'sprint'];
+const MODES = ['classic', 'blitz', 'line', 'sprint', 'rush'];
+const RUSH_SECS = [30, 60, 120, 300];     // Na czas: kto w tym czasie wstawi więcej poprawnych cyfr (po skończonej planszy dostaje następną)
+const secsOf = v => RUSH_SECS.includes(+v) ? +v : 60;
+const queueKey = (mode, ranked, secs) => ranked ? 'ranked' : mode === 'classic' ? 'casual' : mode === 'rush' ? 'rush' + secs : mode;
 const BLITZ_ROUNDS = 3;           // Blitz: 3 plansze pod rząd, wygrywa ten, kto weźmie więcej (2 wygrane kończą serię)
 const LINE_TARGET = 3;            // Linie: wygrywa pierwszy, kto skompletuje tyle rzędów / kolumn / bloków 3x3
 const LINE_MIN_EMPTY = 4;         // do Linii liczą się tylko rzędy/kolumny/bloki z co najmniej tyloma pustymi polami
@@ -187,7 +190,7 @@ function indexUser(u) {
 
 const reports = new Map();        // id -> zgłoszenie
 const banById = new Map(), banUser = new Map(), banIp = new Map();
-const saveU = u => store.save('users', u);
+const saveU = u => { if (!u.bot) store.save('users', u); };
 const removeU = u => store.remove('users', u);
 function indexBan(b) { banById.set(b.id, b); (b.type === 'ip' ? banIp : banUser).set(b.value, b); }
 function unindexBan(b) { banById.delete(b.id); (b.type === 'ip' ? banIp : banUser).delete(b.value); }
@@ -455,7 +458,7 @@ const wss = new WebSocketServer({ server, maxPayload: 4096 });
 // ================= GRA =================
 const players = new Map();                        // userId -> p
 const challenges = new Map();                     // id wyzywającego -> { to, diff, mode, at } (jedno wyzwanie naraz)
-const queues = { ranked: {}, casual: {}, blitz: {}, line: {}, sprint: {} };        // rankingowa (tylko konta) i towarzyska (każdy, bez Elo)
+const queues = { ranked: {}, casual: {}, blitz: {}, line: {}, sprint: {}, rush30: {}, rush60: {}, rush120: {}, rush300: {} };        // rankingowa (tylko konta) i towarzyska (każdy, bez Elo)
 for (const k of Object.keys(queues)) for (const d of Object.keys(DIFFS)) queues[k][d] = [];
 const rooms = new Map();                          // kod -> { hostId, diff, at }  (pojedynek ze znajomym)
 const pendingResults = new Map();                 // userId -> wiadomość (gdy gracz był offline w chwili końca meczu)
@@ -505,14 +508,14 @@ wss.on('connection', (ws, req) => {
       if (p.game || !DIFFS[m.diff]) return;
       const mode = MODES.includes(m.mode) ? m.mode : 'classic';
       if (mode !== 'classic' && DIFFS[m.diff].blind) return notice(p, 'Hardcore jest tylko w grze klasycznej.');
-      const ranked = mode === 'classic' && !!m.ranked;
+      const ranked = mode === 'classic' && !!m.ranked, secs = secsOf(m.secs);
       if (ranked && isGuest(p.user)) {
         notice(p, 'Gra rankingowa wymaga konta. Zaloguj się albo zagraj w kolejce towarzyskiej.');
         return sendP(p, { type: 'idle' });
       }
       leaveAll(p);
-      queues[ranked ? 'ranked' : mode === 'classic' ? 'casual' : mode][m.diff].push({ p, since: Date.now() });
-      sendP(p, { type: 'queued', diff: m.diff, ranked, mode });
+      queues[queueKey(mode, ranked, secs)][m.diff].push({ p, since: Date.now() });
+      sendP(p, { type: 'queued', diff: m.diff, ranked, mode, secs });
     }
     else if (m.type === 'cancel') { leaveAll(p); sendP(p, { type: 'idle' }); }
     else if (m.type === 'report') handleReport(p, m);
@@ -520,6 +523,13 @@ wss.on('connection', (ws, req) => {
     else if (m.type === 'leave') leaveAll(p);                       // wyjście z ekranu wyniku
     else if (m.type === 'move' && p.game) handleMove(p, m);
     else if (m.type === 'resign' && p.game) endGame(p.game, 1 - p.idx, 'resign');
+    else if (m.type === 'bot') {
+      if (p.game || !DIFFS[m.diff]) return;
+      const mode = MODES.includes(m.mode) ? m.mode : 'classic';
+      if (DIFFS[m.diff].blind) return notice(p, 'Z botem nie gramy w Hardcore.');
+      if (limited('bot:' + p.user.id, 20, 60e3)) return notice(p, 'Za dużo gier z botem, poczekaj chwilę.');
+      startBotGame(p, m.diff, { mode, secs: secsOf(m.secs), level: BOT_LEVELS[m.level] ? m.level : 'mid' });
+    }
     else if (m.type === 'friends') sendP(p, friendsView(p.user));
     else if (m.type === 'fadd') friendAdd(p, m);
     else if (m.type === 'faccept') friendAccept(p, m);
@@ -536,8 +546,9 @@ wss.on('connection', (ws, req) => {
       leaveAll(p);
       let code;
       do { code = Array.from(crypto.randomBytes(6), b => ROOM_ALPHABET[b % ROOM_ALPHABET.length]).join(''); } while (rooms.has(code));
-      rooms.set(code, { hostId: p.user.id, diff: m.diff, mode, at: Date.now() });
-      sendP(p, { type: 'room', code, diff: m.diff, mode, ttl: ROOM_TTL_MS });
+      const secs = secsOf(m.secs);
+      rooms.set(code, { hostId: p.user.id, diff: m.diff, mode, secs, at: Date.now() });
+      sendP(p, { type: 'room', code, diff: m.diff, mode, secs, ttl: ROOM_TTL_MS });
     }
     else if (m.type === 'join') {
       if (p.game) return;
@@ -548,16 +559,18 @@ wss.on('connection', (ws, req) => {
       if (host === p) return notice(p, 'To Twoje własne zaproszenie. Wyślij link znajomemu.');
       if (!r || !host || !host.ws || host.game) { rooms.delete(code); return notice(p, 'Zaproszenie wygasło lub nie istnieje.'); }
       rooms.delete(code);
-      startGame(host, p, r.diff, { ranked: false, friend: true, mode: r.mode });
+      startGame(host, p, r.diff, { ranked: false, friend: true, mode: r.mode, secs: r.secs });
     }
     else if (m.type === 'rematch') {
-      const L = p.last, o = L && players.get(L.oppId);
+      const L = p.last;
+      if (L && L.botLevel && !p.game && Date.now() - L.at <= REMATCH_MS) { p.last = null; return startBotGame(p, L.diff, { mode: L.mode, secs: L.secs, level: L.botLevel }); }
+      const o = L && players.get(L.oppId);
       if (!L || p.game || Date.now() - L.at > REMATCH_MS || !o || !o.ws || o.game || !o.last || o.last.oppId !== p.user.id)
         return notice(p, 'Rewanż jest niedostępny.');
       p.rematchWant = true;
       if (o.rematchWant) {
         p.last = o.last = null; p.rematchWant = o.rematchWant = false;
-        startGame(o, p, L.diff, { ranked: L.ranked, friend: L.friend, mode: L.mode });
+        startGame(o, p, L.diff, { ranked: L.ranked, friend: L.friend, mode: L.mode, secs: L.secs });
       } else {
         sendP(p, { type: 'rematchWait' });
         sendP(o, { type: 'rematchOffer' });
@@ -627,9 +640,12 @@ function handleHello(ws, m) {
 // rankingowa: okno różnicy Elo rośnie z czasem czekania; towarzyska: kto pierwszy, ten pierwszy
 setInterval(() => {
   for (const diff of Object.keys(DIFFS)) {
-    for (const k of ['casual', 'blitz', 'line', 'sprint']) {
+    for (const k of ['casual', 'blitz', 'line', 'sprint', 'rush30', 'rush60', 'rush120', 'rush300']) {
       const qc = queues[k][diff];
-      while (qc.length >= 2) { const a = qc.shift(), b = qc.shift(); startGame(a.p, b.p, diff, { ranked: false, mode: k === 'casual' ? 'classic' : k }); }
+      while (qc.length >= 2) {
+        const a = qc.shift(), b = qc.shift();
+        startGame(a.p, b.p, diff, k.startsWith('rush') ? { ranked: false, mode: 'rush', secs: +k.slice(4) } : { ranked: false, mode: k === 'casual' ? 'classic' : k });
+      }
     }
 
     const q = queues.ranked[diff];
@@ -661,9 +677,14 @@ function startGame(p0, p1, diff, opts = {}) {
   const mode = MODES.includes(opts.mode) ? opts.mode : 'classic';
   const game = {
     diff, mode, ranked: mode === 'classic' && !!opts.ranked, friend: !!opts.friend, blind: !!cfg.blind, lockMs: cfg.lock,
-    players: [p0, p1], round: 1, score: [0, 0], over: false, t0: Date.now() + COUNTDOWN_MS
+    players: [p0, p1], round: 1, score: [0, 0], over: false, t0: Date.now() + COUNTDOWN_MS,
+    secs: mode === 'rush' ? secsOf(opts.secs) : 0
   };
   setupBoard(game);
+  if (mode === 'rush') {                                     // koniec gry na czas
+    game.duration = game.secs * 1000; game.endAt = game.startAt + game.duration;
+    game.endTimer = setTimeout(() => rushEnd(game), game.endAt - Date.now() + 50);
+  }
   [p0, p1].forEach((p, i) => { p.game = game; p.idx = i; p.emoteCount = 0; });
   [p0, p1].forEach((p, i) => sendP(p, matchPayload(game, i)));
   pushFriendsOf(p0.user); pushFriendsOf(p1.user);
@@ -676,7 +697,22 @@ for (let k = 0; k < 9; k++) {
   const br = (k / 3 | 0) * 3, bc = (k % 3) * 3;
   UNITS.push(Array.from({ length: 9 }, (_, j) => (br + (j / 3 | 0)) * 9 + bc + (j % 3)));
 }
+function rushBoard(g, n) {                                  // n-ta plansza serii "Na czas": obaj gracze dostają te same plansze w tej samej kolejności
+  while (g.seq.length <= n) g.seq.push(generatePuzzle(g.diff));
+  const { puzzle, solution } = g.seq[n], empties = puzzle.filter(v => v === 0).length;
+  return { n, puzzle, solution, cur: puzzle.slice(), empties, left: empties };
+}
 function setupBoard(g) {                                   // nowa plansza (start meczu albo kolejna runda Blitza)
+  if (g.mode === 'rush') {
+    g.seq = [];
+    g.rb = [rushBoard(g, 0), rushBoard(g, 0)];
+    g.puzzle = g.rb[0].puzzle; g.solution = g.rb[0].solution; g.empties = g.rb[0].empties;
+    g.cur = [g.rb[0].cur, g.rb[1].cur];
+    g.filled = [0, 0]; g.prog = [0, 0]; g.lockedUntil = [0, 0]; g.lastMove = [0, 0];
+    g.errors = [0, 0]; g.lastScore = [0, 0]; g.score = [0, 0];
+    g.startAt = g.t0; g.units = []; g.goal = 0;
+    return;
+  }
   const { puzzle, solution } = generatePuzzle(g.diff);
   g.puzzle = puzzle; g.solution = solution;
   g.empties = puzzle.filter(v => v === 0).length;
@@ -698,18 +734,47 @@ function oppMask(g, i) {                                 // które pola ma wype�
 }
 
 function matchPayload(g, i) {
-  const now = Date.now(), o = g.players[1 - i];
+  const now = Date.now(), o = g.players[1 - i], rb = g.rb && g.rb[i];
   return {
     type: 'match', diff: g.diff, mode: g.mode, ranked: g.ranked, friend: g.friend, blind: g.blind,
     round: g.round, rounds: g.mode === 'blitz' ? BLITZ_ROUNDS : 1, score: [g.score[i], g.score[1 - i]],
     goal: g.goal, prog: g.prog[i], oppProg: g.prog[1 - i],
-    puzzle: g.puzzle, cur: g.cur[i], empties: g.empties,
+    puzzle: rb ? rb.puzzle : g.puzzle, cur: rb ? rb.cur : g.cur[i], empties: rb ? rb.empties : g.empties,
     elapsed: now - g.startAt,                          // ujemne = trwa odliczanie
-    filled: g.filled[i], oppFilled: g.filled[1 - i], oppMask: oppMask(g, 1 - i),
+    filled: rb ? rb.empties - rb.left : g.filled[i], oppFilled: g.filled[1 - i], oppMask: rb ? new Array(81).fill(0) : oppMask(g, 1 - i),
+    rush: rb ? { secs: g.secs, n: rb.n } : undefined,
     lockMs: Math.max(0, g.lockedUntil[i] - now),
-    opp: { name: o.user.name, elo: g.ranked ? o.user.stats[g.diff].elo : null },
-    oppOnline: !!o.ws
+    opp: { name: o.user.name, elo: g.ranked ? o.user.stats[g.diff].elo : null, bot: !!o.isBot },
+    oppOnline: !!o.ws || !!o.isBot
   };
+}
+
+function rushMove(g, p, r, c, v, now) {
+  const i = p.idx, b = g.rb[i], idx = r * 9 + c;
+  if (b.puzzle[idx] || b.cur[idx]) return;
+  g.lastMove[i] = now;
+  if (b.solution[idx] !== v) {
+    g.errors[i]++; g.lockedUntil[i] = now + g.lockMs;
+    return sendP(p, { type: 'wrong', r, c, lockMs: g.lockMs });
+  }
+  b.cur[idx] = v; b.left--; g.score[i]++; g.prog[i] = g.score[i]; g.lastScore[i] = now;
+  sendP(p, { type: 'ok', r, c, v, filled: b.empties - b.left, prog: g.score[i], goal: 0 });
+  sendP(g.players[1 - i], { type: 'opp', prog: g.score[i], goal: 0 });
+  if (b.left === 0) {                                        // skończona plansza: następna od razu
+    const nb = rushBoard(g, b.n + 1);
+    g.rb[i] = nb; g.cur[i] = nb.cur;
+    sendP(p, { type: 'board', puzzle: nb.puzzle, cur: nb.cur, empties: nb.empties, n: nb.n, prog: g.score[i] });
+  }
+}
+function rushEnd(g) {
+  if (g.over) return;
+  const [a, b] = g.score;
+  let w, tie = a === b;
+  if (!tie) w = a > b ? 0 : 1;
+  else if (g.errors[0] !== g.errors[1]) w = g.errors[0] < g.errors[1] ? 0 : 1;        // remis: mniej błędów
+  else if (g.lastScore[0] !== g.lastScore[1]) w = g.lastScore[0] < g.lastScore[1] ? 0 : 1;   // potem: kto wcześniej zdobył ostatnie pole
+  else w = Math.random() < .5 ? 0 : 1;
+  endGame(g, w, 'time', { tie });
 }
 
 function boardWon(g, i) {
@@ -727,6 +792,7 @@ function handleMove(p, m) {
   if (r < 0 || r > 8 || c < 0 || c > 8 || v < (g.blind ? 0 : 1) || v > 9) return;   // 0 = gumka (tylko Hardcore)
   if (now - g.lastMove[i] < MIN_MOVE_MS) return;     // anty-bot: nierealnie szybkie ruchy
   if (now < g.lockedUntil[i]) return;
+  if (g.mode === 'rush') return rushMove(g, p, r, c, v, now);
   const idx = r * 9 + c;
   if (g.puzzle[idx]) return;                         // pole z podpowiedzią
   const mine = g.cur[i];
@@ -779,6 +845,7 @@ function handleEmote(p, m) {
 }
 
 function deliver(p, msg) {
+  if (p.isBot) return;
   if (p.ws) send(p.ws, msg);
   else {
     pendingResults.set(p.user.id, msg);
@@ -786,8 +853,8 @@ function deliver(p, msg) {
   }
 }
 
-function modeOf(g) { return g.mode && g.mode !== 'classic' ? g.mode : g.friend ? 'friend' : g.ranked ? 'ranked' : 'casual'; }
-const lastMode = L => L.mode && L.mode !== 'classic' ? L.mode : L.friend ? 'friend' : L.ranked ? 'ranked' : 'casual';
+function modeOf(g) { return g.bot ? 'bot' : g.mode && g.mode !== 'classic' ? g.mode : g.friend ? 'friend' : g.ranked ? 'ranked' : 'casual'; }
+const lastMode = L => L.botLevel ? 'bot' : L.mode && L.mode !== 'classic' ? L.mode : L.friend ? 'friend' : L.ranked ? 'ranked' : 'casual';
 function pushElo(u, diff, elo, t) {
   const log = u.eloLog[diff] || (u.eloLog[diff] = [[u.createdAt, 1000]]);
   log.push([t, elo]);
@@ -802,6 +869,7 @@ function logHistory(u, e) {
 function endGame(g, winnerIdx, reason, opts = {}) {
   if (g.over) return;
   g.over = true;
+  clearTimeout(g.endTimer); if (g.bot) clearTimeout(g.bot.timer);
   const w = g.players[winnerIdx], l = g.players[1 - winnerIdx];
   const at = Date.now();
   const ms = Math.max(0, at - g.t0);
@@ -831,16 +899,17 @@ function endGame(g, winnerIdx, reason, opts = {}) {
     pushElo(wu, diff, ws_.elo, at); pushElo(lu, diff, ls_.elo, at);
   }
   const eloAfter = u => (g.ranked && !voided) ? u.stats[diff].elo : null;
-  const boards = i => ({ puz: g.puzzle.join(''), sol: g.solution.join(''), mine: g.cur[i].join(''), theirs: g.cur[1 - i].join('') });   // do podglądu planszy z historii
+  const boards0 = i => g.mode === 'rush' ? {} : ({ puz: g.puzzle.join(''), sol: g.solution.join(''), mine: g.cur[i].join(''), theirs: g.cur[1 - i].join('') });   // do podglądu planszy z historii
+  const boards = i => ({ ...boards0(i), ...(g.mode === 'blitz' || g.mode === 'rush' ? { sc: [g.score[i], g.score[1 - i]] } : {}) });
   logHistory(wu, { t: at, opp: lu.name, diff, mode, won: true, reason, ms, delta: wDelta, elo: eloAfter(wu), void: voided, ...boards(winnerIdx) });
   logHistory(lu, { t: at, opp: wu.name, diff, mode, won: false, reason, ms, delta: lDelta, elo: eloAfter(lu), void: voided, ...boards(1 - winnerIdx) });
   saveU(wu); saveU(lu);
 
-  const base = { type: 'result', reason, ms, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, void: voided };
+  const base = { type: 'result', reason, ms, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, void: voided, tie: !!opts.tie, secs: g.secs || undefined, bot: !!g.bot };
   deliver(w, { ...base, won: true, delta: wDelta, rank: wRank, score: [g.score[winnerIdx], g.score[1 - winnerIdx]], user: pub(wu) });
   deliver(l, { ...base, won: false, delta: lDelta, rank: lRank, score: [g.score[1 - winnerIdx], g.score[winnerIdx]], user: pub(lu) });
-  w.last = { oppId: lu.id, oppIp: l.ip, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, at, ms };   // rewanż i zgłoszenie
-  l.last = { oppId: wu.id, oppIp: w.ip, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, at, ms };
+  w.last = { oppId: lu.id, oppIp: l.ip, diff, mode: g.mode, secs: g.secs, botLevel: g.bot ? g.bot.levelKey : undefined, ranked: g.ranked, friend: g.friend, at, ms };   // rewanż i zgłoszenie
+  l.last = { oppId: wu.id, oppIp: w.ip, diff, mode: g.mode, secs: g.secs, botLevel: g.bot ? g.bot.levelKey : undefined, ranked: g.ranked, friend: g.friend, at, ms };
   for (const p of [w, l]) {
     clearTimeout(p.graceTimer);
     p.game = null; p.rematchWant = false;
@@ -859,6 +928,7 @@ function handleReport(p, m) {
   const g = p.game;
   if (g && !g.over) {
     const o = g.players[1 - p.idx];
+    if (o.isBot) return notice(p, 'To bot – nie ma kogo zgłaszać. 🙂');
     target = o.user; ip = o.ip;
     ctx = { diff: g.diff, mode: modeOf(g), ms: Date.now() - g.t0, live: true, at: Date.now() };
   } else if (p.last) {
@@ -1046,6 +1116,51 @@ function rollSeason(newId) {
 }
 setInterval(() => { const id = seasonId(); if (meta.season && id !== meta.season) rollSeason(id); }, 60e3).unref();
 
+// ================= BOT =================
+// Bot gra jak człowiek: wstawia poprawne cyfry w losowym tempie, czasem się myli (i dostaje tę samą blokadę). Tylko gra towarzyska.
+const BOT_LEVELS = {
+  novice: { name: 'Bot Nowicjusz', mean: 7000, err: 0.06 },
+  mid:    { name: 'Bot Amator',    mean: 4500, err: 0.03 },
+  pro:    { name: 'Bot Mistrz',    mean: 2500, err: 0.01 }
+};
+const BOT_DIFF_MULT = { easy: 1, medium: 1.3, hard: 1.8 };      // średni czas na pole rośnie z trudnością
+function startBotGame(p, diff, opts) {
+  leaveAll(p);
+  const lv = BOT_LEVELS[opts.level] || BOT_LEVELS.mid;
+  const user = newUser(lv.name); user.bot = true;
+  const bp = { user, ws: null, game: null, idx: -1, graceTimer: null, last: null, rematchWant: false, isBot: true, ip: '' };
+  startGame(p, bp, diff, { ranked: false, mode: opts.mode, secs: opts.secs });
+  const g = p.game;
+  g.bot = { p: bp, idx: 1, level: lv, levelKey: opts.level, mult: BOT_DIFF_MULT[diff] || 1.5, timer: null };
+  scheduleBot(g, g.startAt - Date.now());
+}
+function scheduleBot(g, lead = 0) {
+  const B = g.bot; if (!B || g.over) return;
+  B.timer = setTimeout(() => botTick(g), Math.max(700, lead + B.level.mean * B.mult * (0.5 + Math.random())));
+}
+function botTick(g) {
+  const B = g.bot; if (!B || g.over) return;
+  const i = B.idx, now = Date.now();
+  if (now < g.startAt) return scheduleBot(g, g.startAt - now);
+  const rb = g.rb && g.rb[i], puzzle = rb ? rb.puzzle : g.puzzle, cur = rb ? rb.cur : g.cur[i], sol = rb ? rb.solution : g.solution;
+  const empty = [];
+  for (let k = 0; k < 81; k++) if (!puzzle[k] && !cur[k]) empty.push(k);
+  if (!empty.length) return scheduleBot(g);
+  let pool = empty;
+  if (g.mode === 'line' && g.units.length) {                  // w Liniach bot dokańcza te jednostki, którym brakuje najmniej pól
+    const left = u => u.filter(k => !puzzle[k] && !cur[k]).length;
+    const score = k => g.units.reduce((m, u) => u.includes(k) ? Math.min(m, left(u)) : m, 99);
+    const best = Math.min(...empty.map(score));
+    pool = empty.filter(k => score(k) === best);
+  }
+  const idx = pool[Math.floor(Math.random() * pool.length)];
+  let v = sol[idx];
+  const wrong = Math.random() < B.level.err;
+  if (wrong) { do { v = 1 + Math.floor(Math.random() * 9); } while (v === sol[idx]); }
+  handleMove(B.p, { r: (idx / 9) | 0, c: idx % 9, v });
+  scheduleBot(g, wrong ? g.lockMs : 0);
+}
+
 // ================= ZNAJOMI I WYZWANIA =================
 const FRIENDS_MAX = 50, REQUESTS_MAX = 20, CHALLENGE_TTL_MS = +process.env.CHALLENGE_TTL_MS || 60e3;
 const onlineP = id => { const q = players.get(id); return q && q.ws ? q : null; };
@@ -1128,9 +1243,10 @@ function challengeSend(p, m) {
   if (!tp) return notice(p, t.name + ' jest offline.');
   if (tp.game) return notice(p, t.name + ' jest teraz w grze.');
   leaveAll(p);
-  challenges.set(me.id, { to: t.id, diff: m.diff, mode, at: Date.now() });
-  sendP(p, { type: 'challengeSent', name: t.name, diff: m.diff, mode, ttl: CHALLENGE_TTL_MS });
-  sendP(tp, { type: 'challenge', from: me.name, diff: m.diff, mode, ttl: CHALLENGE_TTL_MS });
+  const secs = secsOf(m.secs);
+  challenges.set(me.id, { to: t.id, diff: m.diff, mode, secs, at: Date.now() });
+  sendP(p, { type: 'challengeSent', name: t.name, diff: m.diff, mode, secs, ttl: CHALLENGE_TTL_MS });
+  sendP(tp, { type: 'challenge', from: me.name, diff: m.diff, mode, secs, ttl: CHALLENGE_TTL_MS });
 }
 function challengeFind(p, m) {
   const f = userByName(m.from); if (!f) return null;
@@ -1143,7 +1259,7 @@ function challengeAccept(p, m) {
   const fp = onlineP(x.f.id);
   if (!fp || fp.game || p.game) { cancelChallenge(x.f.id, 'Wyzwanie nie jest już możliwe.'); return; }
   challenges.delete(x.f.id);
-  startGame(fp, p, x.ch.diff, { ranked: false, friend: true, mode: x.ch.mode });
+  startGame(fp, p, x.ch.diff, { ranked: false, friend: true, mode: x.ch.mode, secs: x.ch.secs });
 }
 function challengeDecline(p, m) {
   const x = challengeFind(p, m); if (!x) return;
