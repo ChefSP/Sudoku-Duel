@@ -4,6 +4,8 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 
 ## Funkcje
 
+- **Profil i osiągnięcia:** awatar, opis (bez linków; moderacja może go wyczyścić), wizytówka z 3 osiągnięć, publiczny profil po kliknięciu nicku w rankingu. Lista osiągnięć to `ACH` w `server.js`, a warunki w `awardAfterGame`. Seria dni w Zagadce dnia. Obrazek wyniku z przyciskiem udostępniania.
+
 - Zakładka **Co nowego** (`/zmiany`) z listą zmian, edytowaną z panelu właściciela.
 
 - Strona **Jak grać** (`/zasady`) i formularz **Pomysł / błąd** (`/zglos`) ze zrzutem ekranu lub krótkim wideo.

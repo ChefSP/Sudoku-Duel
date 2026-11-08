@@ -119,11 +119,12 @@ $('qgo').onclick = async () => {
   try {
     const u = await api('user?name=' + encodeURIComponent(name));
     $('qres').innerHTML = '<b style="color:var(--text)">' + esc(u.name) + '</b> ' + (u.guest ? '<span class="tag">gość</span>' : '') + (u.banned ? '<span class="tag red">zablokowany</span>' : '')
-      + '<div>Założone: ' + fmtT(u.createdAt) + ' · ostatnio: ' + fmtT(u.lastSeen) + ' · mecze rankingowe: ' + u.ranked + ' · unieważnione: ' + u.flags + '</div>'
+      + (u.bio ? '<div>Bio: „' + esc(u.bio) + '”</div>' : '') + '<div>Założone: ' + fmtT(u.createdAt) + ' · ostatnio: ' + fmtT(u.lastSeen) + ' · mecze rankingowe: ' + u.ranked + ' · unieważnione: ' + u.flags + '</div>'
       + '<div>' + Object.entries(u.stats).map(([d, s]) => esc(d) + ': Elo ' + s.elo + ' (' + s.wins + '/' + s.losses + ')').join(' · ') + '</div>'
-      + '<div class="row">' + (u.banned ? '' : '<button class="red" id="qban">🚫 Zablokuj konto</button>') + '<button class="sec" id="qwarn">⚠ Ostrzeż</button>' + (u.flags ? '<button class="sec" id="qflag">Wyzeruj unieważnione (' + u.flags + ')</button>' : '') + '</div>';
+      + '<div class="row">' + (u.banned ? '' : '<button class="red" id="qban">🚫 Zablokuj konto</button>') + '<button class="sec" id="qwarn">⚠ Ostrzeż</button>' + (u.bio ? '<button class="sec" id="qbio">🧽 Wyczyść bio</button>' : '') + (u.flags ? '<button class="sec" id="qflag">Wyzeruj unieważnione (' + u.flags + ')</button>' : '') + '</div>';
     const b = $('qban'); if (b) b.onclick = () => ban({ type:'user', userId: u.id }, u.name);
     $('qwarn').onclick = () => warn(u);
+    const bb = $('qbio'); if (bb) bb.onclick = async () => { try { await api('clear_bio', { userId: u.id }); $('qgo').click(); } catch (e) { alert(e.message); } };
     const fl = $('qflag'); if (fl) fl.onclick = async () => { try { await api('flags', { userId: u.id }); $('qgo').click(); } catch (e) { alert(e.message); } };
   } catch (e) { $('qres').textContent = e.message; }
 };

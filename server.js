@@ -179,7 +179,8 @@ function newUser(name) {
     id: crypto.randomUUID(), name, pass: null, google: null, sessions: [],
     stats: Object.fromEntries(Object.keys(DIFFS).map(d => [d, newStats()])),
     history: [], eloLog: {}, badges: [], friends: [], fin: [], fout: [], daily: { date: '', runs: {}, done: {} },
-    flags: 0, createdAt: now, lastSeen: now
+    flags: 0, createdAt: now, lastSeen: now,
+    profile: { bio: '', avatar: '🙂', showcase: [] }, ach: {}, achNew: [], dstreak: { cur: 0, best: 0, last: '' }, cnt: { wins: 0 }, warning: null
   };
 }
 const isGuest = u => !u.pass && !u.google;
@@ -317,6 +318,11 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   if (!Array.isArray(u.badges)) u.badges = [];
   for (const k of ['friends', 'fin', 'fout']) if (!Array.isArray(u[k])) u[k] = [];   // znajomi, zaproszenia do mnie, zaproszenia ode mnie
   if (!u.daily || typeof u.daily !== 'object') u.daily = { date: '', runs: {}, done: {} };
+  if (!u.profile || typeof u.profile !== 'object') u.profile = { bio: '', avatar: '🙂', showcase: [] };
+  if (!u.ach || typeof u.ach !== 'object') u.ach = {};
+  if (!Array.isArray(u.achNew)) u.achNew = [];
+  if (!u.dstreak || typeof u.dstreak !== 'object') u.dstreak = { cur: 0, best: 0, last: '' };
+  if (!u.cnt || typeof u.cnt !== 'object') u.cnt = { wins: Object.values(u.stats).reduce((n, x) => n + x.wins, 0) };
   if (u.warning === undefined) u.warning = null;     // ostrzeżenie od moderacji (pokazujemy do potwierdzenia)
 }
 function pub(u) {
@@ -420,6 +426,7 @@ setInterval(() => {                                            // sprzątanie: 4
 
 // ================= PANEL WŁAŚCICIELA, ZMIANY, TEKSTY =================
 const DEFAULT_CHANGELOG = [
+  { v: '10.0', date: '2026-11-08', title: 'Profil i osiągnięcia', items: ['Profil: awatar, opis i wizytówka z 3 osiągnięć; klik w nick w rankingu otwiera profil gracza.', '22 osiągnięcia (wygrana bez błędu, powrót po blokadzie, rangi, tryby, serie).', 'Seria dni z rzędu w Zagadce dnia.', 'Przycisk „Udostępnij wynik” z obrazkiem po wygranej.'] },
   { v: '9.0', date: '2026-11-08', title: 'Zmiany, panel właściciela', items: ['Nowa zakładka „Co nowego” z listą zmian.', 'W trybie Linie liczy się każdy rząd, kolumna i blok – bez dodatkowych obramowań na planszy.', 'Panel właściciela i bezpieczniejszy panel admina.'] },
   { v: '8.0', date: '2026-11-08', title: 'Jak grać i zgłoszenia', items: ['Strona „Jak grać” z krótką lekcją sudoku.', 'Formularz „Pomysł / błąd” ze zrzutem ekranu lub wideo do 30 s.', 'Kary czasowe, ostrzeżenia i ogłoszenia od moderacji.'] },
   { v: '7.0', date: '', title: 'Na czas i bot', items: ['Tryb „Na czas” (30 s – 5 min): kto ułoży więcej plansz.', 'Gra z botem na kilku poziomach.'] },
@@ -524,7 +531,7 @@ app.post('/api/owner/reset_ranking', (req, res) => {
 app.get('/api/admin/user_basic', (req, res) => { if (adminAuth(req, res)) res.json({ ok: true }); });
 
 app.get('/api/config', (req, res) => {
-  res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null, ranks: RANKS,
+  res.json({ googleClientId: GOOGLE_CLIENT_ID || null, turnstileSiteKey: TURNSTILE_SITE_KEY || null, ranks: RANKS, ach: ACH, avatars: AVATARS,
              diffs: Object.fromEntries(Object.entries(DIFFS).map(([k, v]) => [k, { label: v.label, lock: v.lock, blind: !!v.blind }])) });
 });
 
@@ -542,7 +549,7 @@ app.get('/api/leaderboard', (req, res) => {
     .filter(u => !isGuest(u) && u.stats[diff].sgames > 0 && u.flags < FLAGS_HIDE && !userBanned(u.id))   // tabela bieżącego sezonu
     .sort((a, b) => b.stats[diff].elo - a.stats[diff].elo)
     .slice(0, 20)
-    .map(u => ({ name: u.name, elo: u.stats[diff].elo, wins: u.stats[diff].wins, losses: u.stats[diff].losses,
+    .map(u => ({ name: u.name, avatar: u.profile.avatar, elo: u.stats[diff].elo, wins: u.stats[diff].wins, losses: u.stats[diff].losses,
                  badges: [1, 2, 3].map(pl => u.badges.filter(b => b.place === pl).length) }));
   res.json(top);
 });
@@ -726,6 +733,7 @@ wss.on('connection', (ws, req) => {
       if (limited('bot:' + p.user.id, 20, 60e3)) return notice(p, 'Za dużo gier z botem, poczekaj chwilę.');
       startBotGame(p, m.diff, { mode, secs: secsOf(m.secs), level: BOT_LEVELS[m.level] ? m.level : 'mid' });
     }
+    else if (m.type === 'achack') { if (p.user.achNew.length) { p.user.achNew = []; saveU(p.user); } }
     else if (m.type === 'warnack') { if (p.user.warning) { p.user.warning = null; saveU(p.user); } }
     else if (m.type === 'friends') sendP(p, friendsView(p.user));
     else if (m.type === 'fadd') friendAdd(p, m);
@@ -823,6 +831,7 @@ function handleHello(ws, m) {
   send(ws, { type: 'hello', token, user: pub(user) });
   if (!isGuest(user)) send(ws, friendsView(user));
   if (user.warning) send(ws, { type: 'warning', text: user.warning.text });
+  if (user.achNew.length) send(ws, { type: 'ach', list: user.achNew });
   if (meta.announce && meta.announce.until > Date.now()) send(ws, { type: 'announce', text: meta.announce.text, until: meta.announce.until });
   pushFriendsOf(user);
   broadcastOnline();
@@ -1019,6 +1028,7 @@ function handleMove(p, m) {
     sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: 1, prog: g.prog[i], goal: g.goal });
     if (g.prog[i] >= g.goal) boardWon(g, i);
   } else {
+    (g.wrongN || (g.wrongN = [0, 0]))[i]++;
     g.lockedUntil[i] = now + g.lockMs;
     sendP(p, { type: 'wrong', r, c, lockMs: g.lockMs });
   }
@@ -1077,14 +1087,14 @@ function endGame(g, winnerIdx, reason, opts = {}) {
   // anty-bot: wygrana szybsza niż człowiek jest w stanie = mecz unieważniony
   const tooFast = g.ranked && reason === 'solved' && ms < g.empties * MIN_MS_PER_CELL;
   const voided = tooFast || !!opts.void;
-  let wDelta = 0, lDelta = 0, wRank = null, lRank = null;
+  let wDelta = 0, lDelta = 0, wRank = null, lRank = null, eloGap = 0;
   if (tooFast) {
     wu.flags++;
     console.log('Mecz unieważniony (zbyt szybki):', wu.name, ms + 'ms', 'flagi:', wu.flags);
   }
   if (g.ranked && !voided) {                                 // tylko gra rankingowa zmienia Elo i statystyki
     const ws_ = wu.stats[diff], ls_ = lu.stats[diff];
-    const wOld = ws_.elo, lOld = ls_.elo;
+    const wOld = ws_.elo, lOld = ls_.elo; eloGap = lOld - wOld;
     ws_.elo = newElo(wOld, lOld, 1); ls_.elo = newElo(lOld, wOld, 0);
     ws_.wins++; ls_.losses++; ws_.sgames++; ls_.sgames++;
     ws_.streak++; ws_.bestStreak = Math.max(ws_.bestStreak, ws_.streak); ls_.streak = 0;
@@ -1101,7 +1111,9 @@ function endGame(g, winnerIdx, reason, opts = {}) {
   const boards = i => ({ ...boards0(i), ...(g.mode === 'blitz' || g.mode === 'rush' ? { sc: [g.score[i], g.score[1 - i]] } : {}) });
   logHistory(wu, { t: at, opp: lu.name, diff, mode, won: true, reason, ms, delta: wDelta, elo: eloAfter(wu), void: voided, ...boards(winnerIdx) });
   logHistory(lu, { t: at, opp: wu.name, diff, mode, won: false, reason, ms, delta: lDelta, elo: eloAfter(lu), void: voided, ...boards(1 - winnerIdx) });
+  if (!voided) awardAfterGame(g, wu, lu, winnerIdx, reason, ms, eloGap);
   saveU(wu); saveU(lu);
+  flushAch(wu); flushAch(lu);
 
   const base = { type: 'result', reason, ms, diff, mode: g.mode, ranked: g.ranked, friend: g.friend, void: voided, tie: !!opts.tie, secs: g.secs || undefined, bot: !!g.bot };
   deliver(w, { ...base, won: true, delta: wDelta, rank: wRank, score: [g.score[winnerIdx], g.score[1 - winnerIdx]], user: pub(wu) });
@@ -1150,6 +1162,109 @@ function handleReport(p, m) {
   notice(p, 'Dziękujemy, zgłoszenie zostało wysłane do moderacji.');
 }
 
+// ---------- profil, osiągnięcia, serie ----------
+const AVATARS = ['🙂', '😎', '🤓', '🧠', '🦊', '🐼', '🐯', '🦁', '🐸', '🐙', '🦉', '🐺', '🦄', '🐲', '🚀', '⚡', '🔥', '🌈', '🎯', '♟️', '👑', '💎', '🍀', '🌙'];
+const ACH = [
+  { id: 'first_win',    icon: '🎯', name: 'Pierwsza wygrana',   desc: 'Wygraj dowolny pojedynek z człowiekiem.' },
+  { id: 'wins_10',      icon: '🔟', name: '10 wygranych',       desc: 'Wygraj 10 pojedynków.' },
+  { id: 'wins_50',      icon: '⭐', name: '50 wygranych',       desc: 'Wygraj 50 pojedynków.' },
+  { id: 'wins_100',     icon: '🌟', name: '100 wygranych',      desc: 'Wygraj 100 pojedynków.' },
+  { id: 'clean',        icon: '🧼', name: 'Czysta plansza',     desc: 'Wygraj klasyczny pojedynek bez ani jednego błędu.' },
+  { id: 'comeback',     icon: '💪', name: 'Powrót',             desc: 'Wygraj, choć po drodze dostałeś blokadę za błąd.' },
+  { id: 'speed',        icon: '🚀', name: 'Błyskawica',         desc: 'Wygraj klasyczną grę: Łatwy w 2:30, Średni w 4:00 albo Trudny w 7:00.' },
+  { id: 'underdog',     icon: '🐺', name: 'Dawid i Goliat',     desc: 'Pokonaj w rankingu gracza z Elo wyższym o co najmniej 150.' },
+  { id: 'hardcore',     icon: '💀', name: 'Bez litości',        desc: 'Wygraj grę Hardcore (bez podpowiedzi o błędach).' },
+  { id: 'blitz_w',      icon: '⚡', name: 'Mistrz Blitza',      desc: 'Wygraj mecz w trybie Blitz.' },
+  { id: 'line_w',       icon: '📏', name: 'Mistrz Linii',       desc: 'Wygraj mecz w trybie Linie.' },
+  { id: 'sprint_w',     icon: '🏁', name: 'Mistrz Sprintu',     desc: 'Wygraj mecz w trybie Sprint.' },
+  { id: 'rush_w',       icon: '⏱️', name: 'Mistrz Na czas',     desc: 'Wygraj mecz w trybie Na czas.' },
+  { id: 'streak5',      icon: '🔥', name: 'Passa 5',            desc: 'Wygraj 5 meczów rankingowych z rzędu.' },
+  { id: 'rank_silver',  icon: '🥈', name: 'Ranga Srebro',       desc: 'Osiągnij rangę Srebro na dowolnym poziomie.' },
+  { id: 'rank_gold',    icon: '🥇', name: 'Ranga Złoto',        desc: 'Osiągnij rangę Złoto na dowolnym poziomie.' },
+  { id: 'rank_diamond', icon: '💎', name: 'Ranga Diament',      desc: 'Osiągnij rangę Diament na dowolnym poziomie.' },
+  { id: 'daily_1',      icon: '📅', name: 'Zagadka dnia',       desc: 'Rozwiąż swoją pierwszą Zagadkę dnia.' },
+  { id: 'daily_3',      icon: '📆', name: 'Seria 3 dni',        desc: 'Rozwiązuj Zagadkę dnia 3 dni z rzędu.' },
+  { id: 'daily_7',      icon: '🗓️', name: 'Seria 7 dni',        desc: 'Rozwiązuj Zagadkę dnia 7 dni z rzędu.' },
+  { id: 'daily_30',     icon: '👑', name: 'Seria 30 dni',       desc: 'Rozwiązuj Zagadkę dnia 30 dni z rzędu.' },
+  { id: 'season_medal', icon: '🏆', name: 'Medalista sezonu',   desc: 'Zakończ sezon w TOP 3 na dowolnym poziomie.' },
+  { id: 'supporter',    icon: '💖', name: 'Wspierający',        desc: 'Dziękujemy za wsparcie gry!' }
+];
+const ACH_IDS = new Set(ACH.map(a => a.id));
+function grantAch(u, id) {
+  if (!ACH_IDS.has(id) || u.ach[id] || u.bot) return false;
+  u.ach[id] = Date.now(); u.achNew.push(id); return true;
+}
+function flushAch(u) {
+  if (!u.achNew.length) return;
+  const p = players.get(u.id);
+  if (p && p.ws) sendP(p, { type: 'ach', list: u.achNew });
+}
+const SPEED_MS = { easy: 150e3, medium: 240e3, hard: 420e3 };
+function awardAfterGame(g, wu, lu, winnerIdx, reason, ms, eloGap) {
+  if (g.bot || lu.bot || wu.bot || isGuest(wu)) return;
+  const mode = g.mode;
+  wu.cnt.wins = (wu.cnt.wins || 0) + 1;
+  grantAch(wu, 'first_win');
+  if (wu.cnt.wins >= 10) grantAch(wu, 'wins_10');
+  if (wu.cnt.wins >= 50) grantAch(wu, 'wins_50');
+  if (wu.cnt.wins >= 100) grantAch(wu, 'wins_100');
+  const wrong = (g.wrongN || [0, 0])[winnerIdx];
+  if (mode === 'classic' && reason === 'solved' && !g.blind) {
+    if (wrong === 0) grantAch(wu, 'clean'); else grantAch(wu, 'comeback');
+    if (SPEED_MS[g.diff] && ms <= SPEED_MS[g.diff]) grantAch(wu, 'speed');
+  }
+  if (g.blind && reason === 'solved') grantAch(wu, 'hardcore');
+  if (g.ranked && eloGap >= 150) grantAch(wu, 'underdog');
+  const mid = { blitz: 'blitz_w', line: 'line_w', sprint: 'sprint_w', rush: 'rush_w' }[mode];
+  if (mid && reason !== 'disconnect') grantAch(wu, mid);
+  if (g.ranked) {
+    const st = wu.stats[g.diff];
+    if (st.streak >= 5) grantAch(wu, 'streak5');
+    const best = Math.max(...Object.values(wu.stats).map(x => rankIndex(x.elo)));
+    if (best >= 1) grantAch(wu, 'rank_silver'); if (best >= 2) grantAch(wu, 'rank_gold'); if (best >= 3) grantAch(wu, 'rank_diamond');
+  }
+}
+function prevDay(day) { const [y, m, d] = day.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10); }
+function bumpDailyStreak(u, day) {
+  const s = u.dstreak;
+  if (s.last === day) return;
+  s.cur = s.last === prevDay(day) ? s.cur + 1 : 1; s.last = day; s.best = Math.max(s.best, s.cur);
+  grantAch(u, 'daily_1'); if (s.cur >= 3) grantAch(u, 'daily_3'); if (s.cur >= 7) grantAch(u, 'daily_7'); if (s.cur >= 30) grantAch(u, 'daily_30');
+}
+const liveStreak = (u, today) => (u.dstreak.last === today || u.dstreak.last === prevDay(today)) ? u.dstreak.cur : 0;   // seria wygasa, gdy opuścisz dzień
+const BIO_BAD = /(https?:|www\.|\w\.(com|pl|net|org|io|ly|me|gg|tv|xyz)\b|@\w|\b\d{9}\b)/i;
+
+app.post('/api/me/profile', (req, res) => {
+  const b = req.body || {}, u = userByToken(b.token);
+  if (!u || isGuest(u)) return res.status(401).json({ error: 'Profil mają tylko konta.' });
+  if (limited('mep:' + u.id, 20, 3600e3)) return res.status(429).json({ error: 'Za dużo zmian, spróbuj później.' });
+  const bio = String(b.bio == null ? u.profile.bio : b.bio).replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  if (bio && BIO_BAD.test(bio)) return res.status(400).json({ error: 'W opisie nie można wpisywać linków, adresów ani numerów.' });
+  const avatar = b.avatar === undefined ? u.profile.avatar : String(b.avatar);
+  if (!AVATARS.includes(avatar)) return res.status(400).json({ error: 'Nieznany awatar.' });
+  const sc = Array.isArray(b.showcase) ? b.showcase : u.profile.showcase;
+  const showcase = [...new Set(sc.map(String))].filter(id => u.ach[id]).slice(0, 3);
+  u.profile = { bio, avatar, showcase }; saveU(u);
+  res.json({ profile: u.profile });
+});
+app.post('/api/player', (req, res) => {
+  if (limited('pl:' + ipOf(req), 60, 60e3)) return res.status(429).json({ error: 'Za dużo zapytań.' });
+  const id = nameIndex.get(String((req.body || {}).name || '').trim().toLowerCase().slice(0, 40)), u = id && users.get(id);
+  if (!u || u.bot || userBanned(u.id)) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  if (isGuest(u)) return res.json({ name: u.name, guest: true });
+  const stats = {};
+  for (const d of Object.keys(DIFFS)) { const x = u.stats[d]; stats[d] = { elo: x.elo, wins: x.wins, losses: x.losses, bestMs: x.bestMs || null }; }
+  res.json({ name: u.name, guest: false, avatar: u.profile.avatar, bio: u.profile.bio, showcase: u.profile.showcase.filter(i => u.ach[i]), achCount: Object.keys(u.ach).length,
+             streak: liveStreak(u, warsawDay()), bestStreak: u.dstreak.best, since: u.createdAt, stats,
+             medals: [1, 2, 3].map(pl => u.badges.filter(x => x.place === pl).length) });
+});
+app.post('/api/admin/clear_bio', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const u = users.get(String((req.body || {}).userId || ''));
+  if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
+  u.profile = { bio: '', avatar: '🙂', showcase: u.profile.showcase }; saveU(u); audit(req, 'clear_bio', u.name); res.json({ ok: true });
+});
+
 // ---------- profil: statystyki i historia ----------
 app.post('/api/profile', (req, res) => {
   if (limited('prof:' + ipOf(req), 60, 60e3)) return res.status(429).json({ error: 'Za dużo zapytań.' });
@@ -1162,7 +1277,8 @@ app.post('/api/profile', (req, res) => {
     stats[d] = { elo: s.elo, wins: s.wins, losses: s.losses, streak: s.streak, bestStreak: s.bestStreak,
                  bestMs: s.bestMs || null, avgMs: s.solved ? Math.round(s.sumMs / s.solved) : null };
   }
-  res.json({ name: u.name, stats, history: u.history.slice(-50).reverse(), eloLog: u.eloLog, badges: u.badges.slice().reverse() });
+  res.json({ name: u.name, stats, history: u.history.slice(-50).reverse(), eloLog: u.eloLog, badges: u.badges.slice().reverse(),
+             profile: u.profile, ach: u.ach, streak: liveStreak(u, warsawDay()), bestStreak: u.dstreak.best });
 });
 
 // ---------- panel admina ----------
@@ -1221,7 +1337,7 @@ app.get('/api/admin/user', (req, res) => {
   if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
   const games = Object.values(u.stats).reduce((n, x) => n + x.wins + x.losses, 0);
   res.json({ id: u.id, name: u.name, guest: isGuest(u), google: !!u.google, createdAt: u.createdAt, lastSeen: u.lastSeen,
-             flags: u.flags, ranked: games, banned: !!userBanned(u.id),
+             flags: u.flags, ranked: games, banned: !!userBanned(u.id), bio: u.profile.bio, avatar: u.profile.avatar,
              stats: Object.fromEntries(Object.entries(u.stats).map(([d, s]) => [d, { elo: s.elo, wins: s.wins, losses: s.losses }])) });
 });
 app.post('/api/admin/ban', (req, res) => {
@@ -1347,7 +1463,7 @@ function rollSeason(newId) {
         .filter(u => !isGuest(u) && u.stats[d].sgames >= SEASON_MIN_GAMES && u.flags < FLAGS_HIDE && !userBanned(u.id))
         .sort((a, b) => b.stats[d].elo - a.stats[d].elo).slice(0, 3);
       results[d] = top.map((u, k) => ({ place: k + 1, name: u.name, elo: u.stats[d].elo }));
-      top.forEach((u, k) => u.badges.push({ season: old, diff: d, place: k + 1, elo: u.stats[d].elo }));
+      top.forEach((u, k) => { u.badges.push({ season: old, diff: d, place: k + 1, elo: u.stats[d].elo }); grantAch(u, 'season_medal'); });
     }
     meta.history.push({ season: old, results });
     meta.history = meta.history.slice(-12);
@@ -1580,6 +1696,7 @@ app.post('/api/daily/finish', (req, res) => {
     return res.status(400).json({ error: 'Wynik w czasie niemożliwym dla człowieka. Nie został zapisany.' });
   }
   du.done[diff] = ms;
+  bumpDailyStreak(u, daily.date); flushAch(u);
   const board = daily.boards[diff];
   board.push({ id: u.id, ms }); board.sort((x, y) => x.ms - y.ms);
   if (board.length > DAILY_BOARD_MAX) board.length = DAILY_BOARD_MAX;
@@ -1598,6 +1715,7 @@ app.post('/api/daily/status', (req, res) => {
   const u = userByToken((req.body || {}).token);
   if (!u) return res.status(401).json({ error: 'Zaloguj się ponownie.' });
   const daily = dailyNow(), out = { date: daily.date, endsAt: dayEnd(daily.date), guest: isGuest(u), done: {}, running: {} };
+  if (!isGuest(u)) { out.streak = liveStreak(u, daily.date); out.bestStreak = u.dstreak.best; }
   if (!isGuest(u)) {
     const du = dailyUser(u, daily.date);
     for (const d of Object.keys(DIFFS)) {

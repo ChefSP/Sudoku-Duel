@@ -140,6 +140,11 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 #chart svg{width:100%;height:auto;display:block;margin-top:8px}
 #hist td,#hist th{font-size:13px;padding:6px 3px;white-space:nowrap}
 #hist .w{color:var(--green);font-weight:700}#hist .l{color:var(--red);font-weight:700}#hist .v{color:var(--muted)}
+.achg{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:8px;margin-top:8px}
+.ach{background:var(--panel2);border-radius:10px;padding:8px 2px;text-align:center;font-size:11px;line-height:1.2;cursor:pointer;border:2px solid transparent}
+.ach b{display:block;font-size:26px;margin-bottom:2px}.ach.lock{opacity:.35;filter:grayscale(1)}.ach.pick{border-color:var(--green)}
+.avs{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}.avs button{font-size:22px;padding:6px 0;margin:0;background:var(--panel2)}.avs button.on{background:var(--green)}
+.pl{cursor:pointer;text-decoration:underline dotted}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
 .modal .card{width:100%;max-width:420px;margin:0}
 .seg.col{flex-direction:column}
@@ -363,6 +368,8 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
   <div id="profile" class="hidden">
     <h1>Statystyki <span id="pName"></span></h1>
+    <div class="card" id="pHead"></div>
+    <div class="card"><b>🏆 Osiągnięcia</b> <span class="sub" id="pAchCnt" style="font-size:12px"></span><div class="achg" id="pAch"></div><div class="info" id="pAchInfo" style="min-height:18px;margin-top:8px"></div></div>
     <p class="sub">Liczą się mecze rankingowe. Czasy tylko z rozwiązanych plansz.</p>
     <div class="seg" id="pDiffSeg"></div>
     <div id="pStats"></div>
@@ -380,11 +387,28 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <div class="card"><div class="big" id="resElo"></div><div id="resDelta"></div></div>
     <button id="rematch">🔁 Rewanż</button>
     <button class="sec" id="again">⚔ Szukaj nowego przeciwnika</button>
+    <button class="sec" id="shareRes">📤 Udostępnij wynik</button>
     <button class="sec small" id="chatRes">💬 Wyślij emotkę</button>
     <button class="sec small" id="reportRes">🚩 Zgłoś przeciwnika</button>
     <button class="sec" id="toMenu">Menu</button>
   </div>
 </div>
+
+<!-- EDYCJA PROFILU, PROFIL GRACZA, UDOSTĘPNIANIE -->
+<div id="editBox" class="modal hidden"><div class="card" style="max-width:420px;max-height:90vh;overflow:auto">
+  <b>✏️ Edytuj profil</b>
+  <div class="info">Awatar</div><div class="avs" id="edAv"></div>
+  <div class="info" style="margin-top:10px">Opis (do 120 znaków, bez linków i numerów)</div>
+  <textarea id="edBio" maxlength="120" rows="2" style="width:100%;box-sizing:border-box"></textarea>
+  <div class="info" style="margin-top:10px">Wizytówka: wybierz do 3 zdobytych osiągnięć</div><div class="achg" id="edShow"></div>
+  <div class="info" id="edMsg" style="min-height:18px;margin-top:8px"></div>
+  <div class="row"><button id="edSave">Zapisz</button><button class="sec" id="edCancel">Anuluj</button></div></div></div>
+<div id="plBox" class="modal hidden"><div class="card" style="max-width:420px;max-height:90vh;overflow:auto"><div id="plBody"></div><button class="sec" id="plClose">Zamknij</button></div></div>
+<div id="shBox" class="modal hidden"><div class="card" style="max-width:420px;max-height:92vh;overflow:auto;text-align:center">
+  <img id="shImg" alt="Wynik" style="width:100%;border-radius:12px">
+  <div class="row" style="justify-content:center"><button id="shNative">📤 Udostępnij</button><a id="shDl" download="sudoku-duel-wynik.png"><button class="sec" type="button">⬇ Pobierz obraz</button></a></div>
+  <div class="row" style="justify-content:center"><a id="shWa" target="_blank" rel="noopener"><button class="sec" type="button">WhatsApp</button></a><a id="shMs" target="_blank" rel="noopener"><button class="sec" type="button">Messenger</button></a><a id="shFb" target="_blank" rel="noopener"><button class="sec" type="button">Facebook</button></a></div>
+  <button class="sec" id="shClose">Zamknij</button></div></div>
 
 <!-- ZGŁOSZENIE -->
 <div id="hbox" class="modal hidden">
@@ -727,6 +751,7 @@ function onMsg(m){
   else if (m.type === 'banned'){ replaced = true; banner('Twoje konto lub adres IP zostały zablokowane' + (m.until ? ' do ' + new Date(m.until).toLocaleString('pl-PL', { dateStyle:'short', timeStyle:'short' }) : ' na stałe') + (m.reason ? '. Powód: ' + m.reason : '.')); }
   else if (m.type === 'warning'){ $('warnTxt').textContent = m.text; $('warnBox').classList.remove('hidden'); }
   else if (m.type === 'announce'){ showAnnounce(m); }
+  else if (m.type === 'ach'){ showAch(m.list); }
   else if (m.type === 'rematchWait'){ const b = $('rematch'); b.disabled = true; b.className = ''; b.textContent = '⏳ Czekam na przeciwnika…'; }
   else if (m.type === 'rematchOffer'){ const b = $('rematch'); b.disabled = false; b.className = 'offer'; b.textContent = '🔁 Przeciwnik chce rewanżu – graj!'; }
   else if (m.type === 'rematchGone'){ const b = $('rematch'); b.disabled = true; b.className = ''; b.textContent = 'Przeciwnik wyszedł'; }
@@ -832,8 +857,9 @@ async function loadLb(){
     const bd = b => b ? b.map((n, k) => n ? '<span class="bdg">' + MEDAL[k] + (n > 1 ? '×' + n : '') + '</span>' : '').join('') : '';
     $('lb').innerHTML = d.length
       ? '<tr><th>#</th><th>Gracz</th><th>Elo</th><th>W/L</th></tr>' + d.map((u,i) =>
-          `<tr><td>${i+1}</td><td>${rankOf(u.elo).icon} ${esc(u.name)} ${bd(u.badges)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
+          `<tr><td>${i+1}</td><td>${rankOf(u.elo).icon} ${esc(u.avatar || '')} <span class="pl" data-n="${esc(u.name)}">${esc(u.name)}</span> ${bd(u.badges)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
       : '<tr><td class="sub">Nikt jeszcze nie zagrał w tym sezonie rankingowo. Bądź pierwszy!</td></tr>';
+    $('lb').querySelectorAll('.pl').forEach(x => x.onclick = () => openPlayer(x.dataset.n));
   } catch {}
   loadSeason();
 }
@@ -1236,7 +1262,8 @@ function soloFinish(){
 // ---------- koniec meczu ----------
 function endMatch(m){
   clearInterval(timerInt); clearInterval(oppT); G = null; banner(''); sess.del('notes');
-  me = m.user; renderMode();
+  me = m.user; renderMode(); lastRes = m;
+  $('shareRes').classList.toggle('hidden', !(m.won && !m.void));
   const why = {
     solved: m.mode && m.mode !== 'classic'
       ? (m.mode === 'blitz' ? (m.won ? 'Wygrałeś serię ' : 'Przegrałeś serię ') + (m.score ? m.score[0] + ':' + m.score[1] : '')
@@ -1334,7 +1361,7 @@ async function openDaily(){
 }
 function renderDaily(){
   const st = dStatus || { done: {}, running: {} };
-  $('dSub').textContent = 'Ta sama plansza dla wszystkich, jedna próba na poziom. Nowa o północy.' + (st.guest ? ' Jako gość możesz zagrać, ale wynik nie trafi do tabeli.' : '');
+  $('dSub').textContent = 'Ta sama plansza dla wszystkich, jedna próba na poziom. Nowa o północy.' + (st.guest ? ' Jako gość możesz zagrać, ale wynik nie trafi do tabeli.' : (st.streak ? ' 🔥 Seria: ' + st.streak + ' ' + (st.streak === 1 ? 'dzień' : 'dni') + ' (rekord ' + st.bestStreak + ').' : ' Rozwiąż dziś jedną zagadkę, aby zacząć serię 🔥.'));
   $('dDiffSeg').innerHTML = '';
   for (const d of Object.keys(DIFFS)){
     const b = document.createElement('button'); b.textContent = DIFFS[d].label + (st.done[d] ? ' ✅' : ''); b.className = d === dDiff ? 'on' : '';
@@ -1422,7 +1449,7 @@ async function openProfile(){
     prof = await r.json();
     if (!r.ok || prof.guest) throw 0;
   } catch { toast('Nie udało się wczytać statystyk.'); route(); return; }
-  $('pName').textContent = '· ' + prof.name;
+  $('pName').textContent = '· ' + prof.name; renderProfHead();
   const gm = d => prof.stats[d].wins + prof.stats[d].losses;
   if (!gm(pDiff)) pDiff = Object.keys(DIFFS).sort((a, b) => gm(b) - gm(a))[0];   // pusty poziom -> ten, na którym grałeś najwięcej
   renderProfile();
@@ -1612,10 +1639,108 @@ if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !(navigator.standalone || (
 if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol))
   addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 
+
+// ---------- profil, osiągnięcia, udostępnianie ----------
+let lastRes = null, ACH = [], AVATARS = [];
+const achOf = id => ACH.find(a => a.id === id);
+let achQ = [], achT = null;
+function showAch(list){
+  if (!Array.isArray(list) || !list.length) return;
+  achQ = achQ.concat(list.filter(id => achOf(id)));
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type:'achack' }));
+  if (achT) return;
+  const next = () => { const id = achQ.shift(); if (!id){ achT = null; return; } const a = achOf(id);
+    toast('🏆 Nowe osiągnięcie: ' + a.icon + ' ' + a.name + (achQ.length ? ' (+' + achQ.length + ')' : '')); achT = setTimeout(next, 3800); };
+  next();
+}
+function achGrid(el, owned, opt = {}){
+  el.innerHTML = '';
+  ACH.forEach(a => { const d = document.createElement('div'); d.className = 'ach' + (owned[a.id] ? '' : ' lock') + (opt.picked && opt.picked.includes(a.id) ? ' pick' : '');
+    d.innerHTML = '<b>' + a.icon + '</b>' + esc(a.name); d.title = a.desc; d.onclick = () => opt.click ? opt.click(a, d) : ($('pAchInfo').textContent = a.icon + ' ' + a.name + ' – ' + a.desc + (owned[a.id] ? ' ✅ ' + new Date(owned[a.id]).toLocaleDateString('pl-PL') : ' 🔒')); el.appendChild(d); });
+}
+function renderProfHead(){
+  const pr = prof.profile || { bio:'', avatar:'🙂', showcase:[] }, owned = prof.ach || {};
+  const sc = (pr.showcase || []).map(id => achOf(id)).filter(Boolean).map(a => '<span title="' + esc(a.name) + '" style="font-size:22px;margin-right:4px">' + a.icon + '</span>').join('');
+  $('pHead').innerHTML = '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:46px">' + esc(pr.avatar) + '</div><div style="flex:1;min-width:0"><b style="font-size:18px">' + esc(prof.name) + '</b> ' + sc
+    + '<div class="info" style="font-size:14px">' + (pr.bio ? esc(pr.bio) : 'Brak opisu – dodaj coś o sobie.') + '</div>'
+    + '<div class="info">🔥 Seria Zagadki dnia: <b>' + (prof.streak || 0) + '</b> (rekord ' + (prof.bestStreak || 0) + ')</div></div></div><button class="sec small" id="pEdit">✏️ Edytuj profil</button>';
+  $('pEdit').onclick = openEdit;
+  const n = Object.keys(owned).length; $('pAchCnt').textContent = '(' + n + ' / ' + ACH.length + ')'; $('pAchInfo').textContent = 'Kliknij osiągnięcie, aby zobaczyć, jak je zdobyć.';
+  achGrid($('pAch'), owned);
+}
+let edAv = '🙂', edShow = [];
+function openEdit(){
+  const pr = prof.profile || {}, owned = prof.ach || {}; edAv = pr.avatar || '🙂'; edShow = (pr.showcase || []).slice(); $('edBio').value = pr.bio || ''; $('edMsg').textContent = '';
+  const drawAv = () => { $('edAv').innerHTML = ''; AVATARS.forEach(a => { const b = document.createElement('button'); b.textContent = a; b.className = a === edAv ? 'on' : ''; b.onclick = () => { edAv = a; drawAv(); }; $('edAv').appendChild(b); }); };
+  const drawSh = () => achGrid($('edShow'), owned, { picked: edShow, click: a => { if (!owned[a.id]) return; edShow = edShow.includes(a.id) ? edShow.filter(x => x !== a.id) : edShow.concat(a.id).slice(-3); drawSh(); } });
+  drawAv(); drawSh(); $('editBox').classList.remove('hidden');
+}
+$('edCancel').onclick = () => $('editBox').classList.add('hidden');
+$('edSave').onclick = async () => {
+  try {
+    const r = await fetch('/api/me/profile', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ token: store.get('token'), bio: $('edBio').value, avatar: edAv, showcase: edShow }) });
+    const d = await r.json(); if (!r.ok) throw new Error(d.error || 'Błąd');
+    prof.profile = d.profile; renderProfHead(); $('editBox').classList.add('hidden'); toast('Profil zapisany ✔'); loadLb();
+  } catch (e) { $('edMsg').textContent = e.message; }
+};
+async function openPlayer(name){
+  $('plBody').innerHTML = '<div class="info">Ładowanie…</div>'; $('plBox').classList.remove('hidden');
+  try {
+    const r = await fetch('/api/player', { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({ name }) }), d = await r.json(); if (!r.ok) throw new Error(d.error || 'Błąd');
+    if (d.guest){ $('plBody').innerHTML = '<b>' + esc(d.name) + '</b><div class="info">Gość – brak profilu.</div>'; return; }
+    const sc = (d.showcase || []).map(id => achOf(id)).filter(Boolean).map(a => '<span title="' + esc(a.name) + '" style="font-size:22px;margin-right:4px">' + a.icon + '</span>').join('');
+    const tiles = Object.keys(DIFFS).map(k => { const s = d.stats[k], g = s.wins + s.losses; return '<div class="stat"><div class="info">' + DIFFS[k].label + '</div><b>' + rankOf(s.elo).icon + ' ' + s.elo + '</b><div class="info">' + s.wins + 'W / ' + s.losses + 'P' + (g ? '' : ' (brak gier)') + '</div></div>'; }).join('');
+    $('plBody').innerHTML = '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:46px">' + esc(d.avatar) + '</div><div><b style="font-size:18px">' + esc(d.name) + '</b> ' + sc
+      + '<div class="info" style="font-size:14px">' + (d.bio ? esc(d.bio) : '') + '</div></div></div>'
+      + '<div class="info" style="margin-top:8px">🏆 Osiągnięcia: <b>' + d.achCount + '</b> · 🔥 Seria dzienna: <b>' + d.streak + '</b> (rekord ' + d.bestStreak + ')' + (d.medals.some(x => x) ? ' · ' + d.medals.map((n, k) => n ? MEDAL[k] + '×' + n : '').filter(Boolean).join(' ') : '') + '</div>'
+      + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0">' + tiles + '</div>'
+      + '<div class="info">Na koncie od ' + new Date(d.since).toLocaleDateString('pl-PL') + '</div>';
+  } catch (e) { $('plBody').innerHTML = '<div class="info">' + esc(e.message) + '</div>'; }
+}
+$('plClose').onclick = () => $('plBox').classList.add('hidden');
+
+// ----- obrazek wyniku -----
+function drawShare(m){
+  const c = document.createElement('canvas'); c.width = 1080; c.height = 1080; const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 1080, 1080); g.addColorStop(0, '#1b2a1b'); g.addColorStop(1, '#161512'); x.fillStyle = g; x.fillRect(0, 0, 1080, 1080);
+  x.strokeStyle = '#81b64c'; x.lineWidth = 10; x.strokeRect(30, 30, 1020, 1020);
+  const elo = m.user && m.user.stats ? m.user.stats[m.diff].elo : null, rk = elo != null ? rankOf(elo) : null;
+  x.textAlign = 'center'; x.fillStyle = '#e8e6e3';
+  x.font = '700 64px system-ui,sans-serif'; x.fillText('♟ SUDOKU DUEL', 540, 150);
+  x.font = '260px system-ui,"Apple Color Emoji","Segoe UI Emoji",sans-serif'; x.fillText(rk ? rk.icon : '🏆', 540, 470);
+  x.fillStyle = '#81b64c'; x.font = '800 104px system-ui,sans-serif'; x.fillText('Wygrałem w ' + fmt(m.ms), 540, 650);
+  x.fillStyle = '#e8e6e3'; x.font = '600 58px system-ui,sans-serif';
+  const mode = m.mode && m.mode !== 'classic' ? ' · ' + (MODES[m.mode] ? MODES[m.mode].short || m.mode : m.mode) : '';
+  x.fillText(DIFFS[m.diff].label + mode, 540, 740);
+  if (rk && m.ranked){ x.fillStyle = '#f0b429'; x.fillText('Ranga ' + rk.name + ' · ' + elo + ' Elo' + (m.delta ? ' (' + (m.delta > 0 ? '+' : '') + m.delta + ')' : ''), 540, 820); }
+  else if (rk){ x.fillStyle = '#989795'; x.fillText('Ranga ' + rk.name, 540, 820); }
+  x.fillStyle = '#e8e6e3'; x.font = '600 52px system-ui,sans-serif'; x.fillText('Zagrasz ze mną? ' + location.host, 540, 970);
+  return c;
+}
+let shBlob = null;
+$('shareRes').onclick = () => {
+  if (!lastRes) return;
+  drawShare(lastRes).toBlob(b => {
+    shBlob = b; const url = URL.createObjectURL(b), link = location.origin, txt = 'Wygrałem w ' + fmt(lastRes.ms) + ' na poziomie ' + DIFFS[lastRes.diff].label + ' w Sudoku Duel! Zagraj ze mną:';
+    $('shImg').src = url; $('shDl').href = url;
+    $('shWa').href = 'https://wa.me/?text=' + encodeURIComponent(txt + ' ' + link);
+    $('shMs').href = /Android|iPhone|iPad/i.test(navigator.userAgent) ? 'fb-messenger://share/?link=' + encodeURIComponent(link) : 'https://www.facebook.com/dialog/send?link=' + encodeURIComponent(link) + '&redirect_uri=' + encodeURIComponent(link);
+    $('shFb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(link);
+    $('shNative').classList.toggle('hidden', !navigator.share);
+    $('shBox').classList.remove('hidden'); $('shBox').dataset.txt = txt;
+  }, 'image/png');
+};
+$('shNative').onclick = async () => {
+  const txt = $('shBox').dataset.txt, files = [new File([shBlob], 'sudoku-duel-wynik.png', { type:'image/png' })];
+  try { if (navigator.canShare && navigator.canShare({ files })) await navigator.share({ files, text: txt, url: location.origin }); else await navigator.share({ text: txt, url: location.origin }); } catch {}
+};
+$('shClose').onclick = () => { $('shBox').classList.add('hidden'); URL.revokeObjectURL($('shImg').src); };
+
 // ---------- start ----------
 renderTiles(); renderMode(); renderLbSeg();
 fetch('/api/config').then(r => r.json()).then(c => {
   cfg = c; if (Array.isArray(c.ranks) && c.ranks.length) { RANKS = c.ranks; renderMode(); }
+  if (Array.isArray(c.ach)) ACH = c.ach; if (Array.isArray(c.avatars)) AVATARS = c.avatars;
   if (c.googleClientId) loadScript('https://accounts.google.com/gsi/client', () => { googleReady = true; });
   if (c.turnstileSiteKey) loadScript('https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit', () => {});
 }).catch(() => {});
