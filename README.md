@@ -4,6 +4,9 @@ Ranked 1v1: ten sam sudoku dla obu graczy, wygrywa ten, kto pierwszy wypełni ca
 
 ## Funkcje
 
+- **Powtórka meczu:** w historii (ostatnie 10 meczów klasycznych, Linie i Sprint) przycisk „▶ Powtórka” odtwarza ruchy obu graczy; błędne ruchy migają na czerwono.
+- **Kluby** (`/kluby`): do 30 osób, 1 klub na gracza, skrót [TAG] przy nicku w rankingu. Ranking klubów: wygrane członków z 7 dni, potem średnie Elo TOP 5. Założyciel edytuje opis, wyrzuca członków i rozwiązuje klub; admin może usunąć klub w panelu.
+
 - **Profil i osiągnięcia:** awatar, opis (bez linków; moderacja może go wyczyścić), wizytówka z 3 osiągnięć, publiczny profil po kliknięciu nicku w rankingu. Lista osiągnięć to `ACH` w `server.js`, a warunki w `awardAfterGame`. Seria dni w Zagadce dnia. Obrazek wyniku z przyciskiem udostępniania.
 
 - Zakładka **Co nowego** (`/zmiany`) z listą zmian, edytowaną z panelu właściciela.

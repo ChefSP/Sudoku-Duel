@@ -180,7 +180,7 @@ function newUser(name) {
     stats: Object.fromEntries(Object.keys(DIFFS).map(d => [d, newStats()])),
     history: [], eloLog: {}, badges: [], friends: [], fin: [], fout: [], daily: { date: '', runs: {}, done: {} },
     flags: 0, createdAt: now, lastSeen: now,
-    profile: { bio: '', avatar: '🙂', showcase: [] }, ach: {}, achNew: [], dstreak: { cur: 0, best: 0, last: '' }, cnt: { wins: 0 }, warning: null
+    profile: { bio: '', avatar: '🙂', showcase: [] }, ach: {}, achNew: [], dstreak: { cur: 0, best: 0, last: '' }, cnt: { wins: 0 }, warning: null, club: null
   };
 }
 const isGuest = u => !u.pass && !u.google;
@@ -191,6 +191,7 @@ function indexUser(u) {
 
 const reports = new Map();        // id -> zgłoszenie
 const banById = new Map(), banUser = new Map(), banIp = new Map();
+const clubs = new Map();                          // kluby: id -> { id, name, tag, emoji, desc, ownerId, members[], createdAt }
 const feedback = new Map();                       // zgłoszenia pomysłów i błędów (tekst w bazie, załączniki osobno)
 const saveU = u => { if (!u.bot) store.save('users', u); };
 const removeU = u => store.remove('users', u);
@@ -204,7 +205,7 @@ const MEDIA_DIR = path.join(path.dirname(DATA_FILE), 'media');
 function makeJsonStore() {
   let timer = null;
   const write = () => {
-    const data = JSON.stringify({ version: 3, users: [...users.values()], reports: [...reports.values()], bans: [...banById.values()], feedback: [...feedback.values()], meta });
+    const data = JSON.stringify({ version: 3, users: [...users.values()], reports: [...reports.values()], bans: [...banById.values()], feedback: [...feedback.values()], clubs: [...clubs.values()], meta });
     fs.writeFile(DATA_FILE + '.tmp', data, err => {
       if (!err) fs.rename(DATA_FILE + '.tmp', DATA_FILE, () => {});
     });
@@ -214,8 +215,8 @@ function makeJsonStore() {
     kind: 'plik JSON',
     async load() {
       let raw;
-      try { raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return { users: [], reports: [], bans: [], feedback: [], meta: [] }; }
-      if (raw && raw.version >= 2) return { users: raw.users || [], reports: raw.reports || [], bans: raw.bans || [], feedback: raw.feedback || [], meta: raw.meta ? [raw.meta] : [] };
+      try { raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return { users: [], reports: [], bans: [], feedback: [], clubs: [], meta: [] }; }
+      if (raw && raw.version >= 2) return { users: raw.users || [], reports: raw.reports || [], bans: raw.bans || [], feedback: raw.feedback || [], clubs: raw.clubs || [], meta: raw.meta ? [raw.meta] : [] };
       // stary format: { token: {name, elo, wins, losses} }
       const list = Object.entries(raw || {}).map(([token, o]) => {
         const u = newUser('Guest');
@@ -240,7 +241,7 @@ function makePgStore(url) {
   const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
   const pool = new Pool({ connectionString: u.toString(), ssl, max: 5 });
   pool.on('error', e => console.error('pg pool:', e.message));
-  const TABLE = { users: 'users', reports: 'reports', bans: 'bans', meta: 'meta', feedback: 'feedback' };    // stała lista (nic od użytkownika nie trafia do SQL)
+  const TABLE = { users: 'users', reports: 'reports', bans: 'bans', meta: 'meta', feedback: 'feedback', clubs: 'clubs' };    // stała lista (nic od użytkownika nie trafia do SQL)
   return {
     kind: 'Postgres',
     async load() {
@@ -319,6 +320,7 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   for (const k of ['friends', 'fin', 'fout']) if (!Array.isArray(u[k])) u[k] = [];   // znajomi, zaproszenia do mnie, zaproszenia ode mnie
   if (!u.daily || typeof u.daily !== 'object') u.daily = { date: '', runs: {}, done: {} };
   if (!u.profile || typeof u.profile !== 'object') u.profile = { bio: '', avatar: '🙂', showcase: [] };
+  if (u.club === undefined) u.club = null;
   if (!u.ach || typeof u.ach !== 'object') u.ach = {};
   if (!Array.isArray(u.achNew)) u.achNew = [];
   if (!u.dstreak || typeof u.dstreak !== 'object') u.dstreak = { cur: 0, best: 0, last: '' };
@@ -326,7 +328,8 @@ function ensureUser(u) {                // uzupełnia dane starszych kont po akt
   if (u.warning === undefined) u.warning = null;     // ostrzeżenie od moderacji (pokazujemy do potwierdzenia)
 }
 function pub(u) {
-  return { name: u.name, guest: isGuest(u), google: !!u.google, stats: u.stats };
+  const c = clubs.get(u.club);
+  return { name: u.name, guest: isGuest(u), google: !!u.google, stats: u.stats, club: c ? { id: c.id, name: c.name, tag: c.tag } : null };
 }
 
 // ================= HTTP =================
@@ -343,7 +346,7 @@ app.use('/api', (req, res, next) => {              // zablokowany adres IP nie k
 });
 
 // ładne adresy podstron gry (aplikacja sama rozpoznaje je po adresie)
-app.get(['/tryb/:mode', '/zagadka', '/znajomi', '/zasady', '/zglos', '/zmiany'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get(['/tryb/:mode', '/zagadka', '/znajomi', '/zasady', '/zglos', '/zmiany', '/kluby'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 // ---------- pomysły i błędy (z opcjonalnym zrzutem ekranu lub krótkim wideo) ----------
 const FEEDBACK_KINDS = ['bug', 'idea', 'other'], FEEDBACK_MAX = 500, IMG_MAX = 2.5e6, VID_MAX = 10e6, MEDIA_TOTAL_MAX = 150e6;
@@ -426,6 +429,7 @@ setInterval(() => {                                            // sprzątanie: 4
 
 // ================= PANEL WŁAŚCICIELA, ZMIANY, TEKSTY =================
 const DEFAULT_CHANGELOG = [
+  { v: '11.0', date: '2026-11-09', title: 'Powtórki i kluby', items: ['Powtórka meczu: odtwarzanie ruchów obu graczy w czasie (ostatnie 10 meczów w historii).', 'Kluby: zakładanie, dołączanie, ranking klubów i skrót [TAG] przy nicku.', 'Osiągnięcie „Drużynowy gracz”.'] },
   { v: '10.0', date: '2026-11-08', title: 'Profil i osiągnięcia', items: ['Profil: awatar, opis i wizytówka z 3 osiągnięć; klik w nick w rankingu otwiera profil gracza.', '22 osiągnięcia (wygrana bez błędu, powrót po blokadzie, rangi, tryby, serie).', 'Seria dni z rzędu w Zagadce dnia.', 'Przycisk „Udostępnij wynik” z obrazkiem po wygranej.'] },
   { v: '9.0', date: '2026-11-08', title: 'Zmiany, panel właściciela', items: ['Nowa zakładka „Co nowego” z listą zmian.', 'W trybie Linie liczy się każdy rząd, kolumna i blok – bez dodatkowych obramowań na planszy.', 'Panel właściciela i bezpieczniejszy panel admina.'] },
   { v: '8.0', date: '2026-11-08', title: 'Jak grać i zgłoszenia', items: ['Strona „Jak grać” z krótką lekcją sudoku.', 'Formularz „Pomysł / błąd” ze zrzutem ekranu lub wideo do 30 s.', 'Kary czasowe, ostrzeżenia i ogłoszenia od moderacji.'] },
@@ -503,6 +507,7 @@ app.post('/api/owner/delete_user', (req, res) => {
   const u = users.get(String((req.body || {}).userId || ''));
   if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
   if (String(req.body.confirm || '').toLowerCase() !== u.name.toLowerCase()) return res.status(400).json({ error: 'Wpisz nick gracza, aby potwierdzić.' });
+  if (u.club) leaveClub(u);
   const p = players.get(u.id);
   if (p) { if (p.game && !p.game.over) endGame(p.game, 1 - p.idx, 'banned', { void: true }); if (p.ws) { try { p.ws.close(4004, 'deleted'); } catch {} } }
   users.delete(u.id); u.sessions.forEach(x => sessionIndex.delete(x)); if (nameIndex.get(u.name.toLowerCase()) === u.id) nameIndex.delete(u.name.toLowerCase());
@@ -549,7 +554,7 @@ app.get('/api/leaderboard', (req, res) => {
     .filter(u => !isGuest(u) && u.stats[diff].sgames > 0 && u.flags < FLAGS_HIDE && !userBanned(u.id))   // tabela bieżącego sezonu
     .sort((a, b) => b.stats[diff].elo - a.stats[diff].elo)
     .slice(0, 20)
-    .map(u => ({ name: u.name, avatar: u.profile.avatar, elo: u.stats[diff].elo, wins: u.stats[diff].wins, losses: u.stats[diff].losses,
+    .map(u => ({ name: u.name, avatar: u.profile.avatar, tag: (clubs.get(u.club) || {}).tag || '', elo: u.stats[diff].elo, wins: u.stats[diff].wins, losses: u.stats[diff].losses,
                  badges: [1, 2, 3].map(pl => u.badges.filter(b => b.place === pl).length) }));
   res.json(top);
 });
@@ -992,6 +997,11 @@ function boardWon(g, i) {
   g.players.forEach((q, k) => sendP(q, { ...matchPayload(g, k), roundWinner: i === k ? 'me' : 'opp' }));
 }
 
+const RP_MAX = 400, RP_KEEP = 10;                           // powtórki: max ruchów na gracza, powtórki trzymamy w ostatnich 10 meczach
+function recMove(g, i, now, idx, v, w) {
+  const a = (g.rp || (g.rp = [[], []]))[i];
+  if (a.length < RP_MAX) a.push([Math.max(0, now - g.startAt), idx, v, w]);
+}
 function handleMove(p, m) {
   const g = p.game, i = p.idx, now = Date.now();
   if (g.over || now < g.startAt) return;
@@ -1008,7 +1018,7 @@ function handleMove(p, m) {
     if (mine[idx] === v) return;
     g.lastMove[i] = now;
     g.filled[i] += (v ? 1 : 0) - (mine[idx] ? 1 : 0);
-    mine[idx] = v;
+    mine[idx] = v; recMove(g, i, now, idx, v, 0);
     sendP(p, { type: 'ok', r, c, v, filled: g.filled[i] });
     sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: v ? 1 : 0 });
     if (g.filled[i] >= g.empties) {
@@ -1021,14 +1031,14 @@ function handleMove(p, m) {
   if (mine[idx] !== 0) return;
   g.lastMove[i] = now;
   if (g.solution[idx] === v) {
-    mine[idx] = v;
+    mine[idx] = v; recMove(g, i, now, idx, v, 0);
     g.filled[i]++;
     g.prog[i] = progressOf(g, i);
     sendP(p, { type: 'ok', r, c, v, filled: g.filled[i], prog: g.prog[i], goal: g.goal });
     sendP(g.players[1 - i], { type: 'opp', filled: g.filled[i], cell: idx, on: 1, prog: g.prog[i], goal: g.goal });
     if (g.prog[i] >= g.goal) boardWon(g, i);
   } else {
-    (g.wrongN || (g.wrongN = [0, 0]))[i]++;
+    (g.wrongN || (g.wrongN = [0, 0]))[i]++; recMove(g, i, now, idx, v, 1);
     g.lockedUntil[i] = now + g.lockMs;
     sendP(p, { type: 'wrong', r, c, lockMs: g.lockMs });
   }
@@ -1072,6 +1082,7 @@ function logHistory(u, e) {
   if (isGuest(u)) return;                                    // goście nie mają historii
   u.history.push(e);
   while (u.history.length > HISTORY_MAX) u.history.shift();
+  for (let k = 0; k < u.history.length - RP_KEEP; k++) if (u.history[k].rp) delete u.history[k].rp;
 }
 
 function endGame(g, winnerIdx, reason, opts = {}) {
@@ -1107,7 +1118,7 @@ function endGame(g, winnerIdx, reason, opts = {}) {
     pushElo(wu, diff, ws_.elo, at); pushElo(lu, diff, ls_.elo, at);
   }
   const eloAfter = u => (g.ranked && !voided) ? u.stats[diff].elo : null;
-  const boards0 = i => g.mode === 'rush' ? {} : ({ puz: g.puzzle.join(''), sol: g.solution.join(''), mine: g.cur[i].join(''), theirs: g.cur[1 - i].join('') });   // do podglądu planszy z historii
+  const boards0 = i => g.mode === 'rush' ? {} : ({ puz: g.puzzle.join(''), sol: g.solution.join(''), mine: g.cur[i].join(''), theirs: g.cur[1 - i].join(''), ...(g.rp && g.mode !== 'blitz' ? { rp: [g.rp[i], g.rp[1 - i]] } : {}) });   // do podglądu planszy z historii
   const boards = i => ({ ...boards0(i), ...(g.mode === 'blitz' || g.mode === 'rush' ? { sc: [g.score[i], g.score[1 - i]] } : {}) });
   logHistory(wu, { t: at, opp: lu.name, diff, mode, won: true, reason, ms, delta: wDelta, elo: eloAfter(wu), void: voided, ...boards(winnerIdx) });
   logHistory(lu, { t: at, opp: wu.name, diff, mode, won: false, reason, ms, delta: lDelta, elo: eloAfter(lu), void: voided, ...boards(1 - winnerIdx) });
@@ -1186,6 +1197,7 @@ const ACH = [
   { id: 'daily_3',      icon: '📆', name: 'Seria 3 dni',        desc: 'Rozwiązuj Zagadkę dnia 3 dni z rzędu.' },
   { id: 'daily_7',      icon: '🗓️', name: 'Seria 7 dni',        desc: 'Rozwiązuj Zagadkę dnia 7 dni z rzędu.' },
   { id: 'daily_30',     icon: '👑', name: 'Seria 30 dni',       desc: 'Rozwiązuj Zagadkę dnia 30 dni z rzędu.' },
+  { id: 'club_join',    icon: '🛡️', name: 'Drużynowy gracz',    desc: 'Dołącz do klubu albo załóż własny.' },
   { id: 'season_medal', icon: '🏆', name: 'Medalista sezonu',   desc: 'Zakończ sezon w TOP 3 na dowolnym poziomie.' },
   { id: 'supporter',    icon: '💖', name: 'Wspierający',        desc: 'Dziękujemy za wsparcie gry!' }
 ];
@@ -1254,7 +1266,8 @@ app.post('/api/player', (req, res) => {
   if (isGuest(u)) return res.json({ name: u.name, guest: true });
   const stats = {};
   for (const d of Object.keys(DIFFS)) { const x = u.stats[d]; stats[d] = { elo: x.elo, wins: x.wins, losses: x.losses, bestMs: x.bestMs || null }; }
-  res.json({ name: u.name, guest: false, avatar: u.profile.avatar, bio: u.profile.bio, showcase: u.profile.showcase.filter(i => u.ach[i]), achCount: Object.keys(u.ach).length,
+  const cl = clubs.get(u.club);
+  res.json({ name: u.name, guest: false, club: cl ? { id: cl.id, name: cl.name, tag: cl.tag, emoji: cl.emoji } : null, avatar: u.profile.avatar, bio: u.profile.bio, showcase: u.profile.showcase.filter(i => u.ach[i]), achCount: Object.keys(u.ach).length,
              streak: liveStreak(u, warsawDay()), bestStreak: u.dstreak.best, since: u.createdAt, stats,
              medals: [1, 2, 3].map(pl => u.badges.filter(x => x.place === pl).length) });
 });
@@ -1263,6 +1276,112 @@ app.post('/api/admin/clear_bio', (req, res) => {
   const u = users.get(String((req.body || {}).userId || ''));
   if (!u) return res.status(404).json({ error: 'Nie ma takiego gracza.' });
   u.profile = { bio: '', avatar: '🙂', showcase: u.profile.showcase }; saveU(u); audit(req, 'clear_bio', u.name); res.json({ ok: true });
+});
+
+// ---------- kluby ----------
+const CLUB_MAX = 30, CLUB_NAME_RE = /^[\p{L}\p{N}][\p{L}\p{N} _-]{1,18}[\p{L}\p{N}]$/u;
+const clubKey = n => String(n).toLowerCase().replace(/\s+/g, ' ');
+const bestElo = u => Math.max(...Object.values(u.stats).filter(x => x.sgames > 0).map(x => x.elo), 1000);
+const weeklyWins = u => { const lim = Date.now() - 7 * 86400e3; return u.history.filter(h => h.t > lim && h.won && !h.void && h.mode !== 'bot' && h.mode !== 'friend').length; };
+const clubCache = new Map();
+function clubStats(c) {
+  const hit = clubCache.get(c.id); if (hit && Date.now() - hit.at < 60e3) return hit.v;
+  const ms = c.members.map(id => users.get(id)).filter(Boolean);
+  const rows = ms.map(u => ({ id: u.id, name: u.name, avatar: u.profile.avatar, elo: bestElo(u), weekly: weeklyWins(u), owner: u.id === c.ownerId, online: !!(players.get(u.id) || {}).ws }));
+  rows.sort((a, b) => b.weekly - a.weekly || b.elo - a.elo);
+  const top5 = rows.map(r => r.elo).sort((a, b) => b - a).slice(0, 5);
+  const v = { rows, weekly: rows.reduce((n, r) => n + r.weekly, 0), avgElo: top5.length ? Math.round(top5.reduce((a, b) => a + b, 0) / top5.length) : 1000 };
+  clubCache.set(c.id, { at: Date.now(), v }); return v;
+}
+const clubCard = c => { const st = clubStats(c); return { id: c.id, name: c.name, tag: c.tag, emoji: c.emoji, desc: c.desc, members: c.members.length, max: CLUB_MAX, weekly: st.weekly, avgElo: st.avgElo }; };
+const clubFull = (c, viewer) => ({ ...clubCard(c), rows: clubStats(c).rows, mine: !!viewer && c.members.includes(viewer.id), owner: !!viewer && c.ownerId === viewer.id });
+function clubAuth(req, res) {
+  const u = userByToken((req.body || {}).token);
+  if (!u) { res.status(401).json({ error: 'Odśwież stronę i spróbuj ponownie.' }); return null; }
+  if (isGuest(u)) { res.status(403).json({ error: 'Kluby są dla zalogowanych graczy – załóż konto.' }); return null; }
+  return u;
+}
+function dropClub(c) { for (const id of c.members) { const m = users.get(id); if (m) { m.club = null; saveU(m); } } clubs.delete(c.id); clubCache.delete(c.id); store.remove('clubs', c); }
+function leaveClub(u) {
+  const c = clubs.get(u.club); u.club = null; saveU(u); if (!c) return;
+  c.members = c.members.filter(x => x !== u.id); clubCache.delete(c.id);
+  if (!c.members.length) return dropClub(c);
+  if (c.ownerId === u.id) { c.ownerId = clubStats(c).rows[0].id; clubCache.delete(c.id); }           // przywództwo przejmuje najaktywniejszy członek
+  store.save('clubs', c);
+}
+const cleanTxt = (t, n) => String(t == null ? '' : t).replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, n);
+app.post('/api/clubs/list', (req, res) => {
+  const u = userByToken((req.body || {}).token);
+  if (!u) return res.status(401).json({ error: 'Odśwież stronę i spróbuj ponownie.' });
+  if (limited('cl:' + ipOf(req), 90, 60e3)) return res.status(429).json({ error: 'Za dużo zapytań.' });
+  const q = clubKey(cleanTxt((req.body || {}).q, 30));
+  let list = [...clubs.values()].filter(c => !q || clubKey(c.name).includes(q) || c.tag.toLowerCase() === q).map(clubCard)
+    .sort((a, b) => b.weekly - a.weekly || b.avgElo - a.avgElo || b.members - a.members).slice(0, 30);
+  const mine = clubs.get(u.club);
+  res.json({ guest: isGuest(u), mine: mine ? clubFull(mine, u) : null, top: list });
+});
+app.post('/api/clubs/get', (req, res) => {
+  const u = userByToken((req.body || {}).token), c = clubs.get(String((req.body || {}).id || ''));
+  if (!u) return res.status(401).json({ error: 'Odśwież stronę i spróbuj ponownie.' });
+  if (!c) return res.status(404).json({ error: 'Nie ma takiego klubu.' });
+  res.json(clubFull(c, u));
+});
+app.post('/api/clubs/create', (req, res) => {
+  const u = clubAuth(req, res); if (!u) return;
+  const b = req.body; if (u.club && clubs.has(u.club)) return res.status(400).json({ error: 'Najpierw opuść obecny klub.' });
+  const name = cleanTxt(b.name, 20), tag = String(b.tag || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4), desc = cleanTxt(b.desc, 100), emoji = AVATARS.includes(b.emoji) ? b.emoji : '🛡️';
+  if (!CLUB_NAME_RE.test(name)) return res.status(400).json({ error: 'Nazwa: 3–20 znaków (litery, cyfry, spacja, - i _).' });
+  if (tag.length < 2) return res.status(400).json({ error: 'Skrót klubu: 2–4 litery lub cyfry.' });
+  if (desc && BIO_BAD.test(desc)) return res.status(400).json({ error: 'W opisie nie można wpisywać linków, adresów ani numerów.' });
+  for (const c of clubs.values()) if (clubKey(c.name) === clubKey(name) || c.tag === tag) return res.status(409).json({ error: 'Klub o takiej nazwie lub skrócie już istnieje.' });
+  if (limited('clc:' + u.id, 3, 86400e3)) return res.status(429).json({ error: 'Dziś założyłeś już kilka klubów, spróbuj jutro.' });
+  const c = { id: crypto.randomUUID(), name, tag, emoji, desc, ownerId: u.id, members: [u.id], createdAt: Date.now() };
+  clubs.set(c.id, c); store.save('clubs', c); u.club = c.id; grantAch(u, 'club_join'); saveU(u); flushAch(u);
+  res.json(clubFull(c, u));
+});
+app.post('/api/clubs/join', (req, res) => {
+  const u = clubAuth(req, res); if (!u) return;
+  const c = clubs.get(String(req.body.id || ''));
+  if (!c) return res.status(404).json({ error: 'Nie ma takiego klubu.' });
+  if (u.club && clubs.has(u.club)) return res.status(400).json({ error: 'Najpierw opuść obecny klub.' });
+  if (c.members.length >= CLUB_MAX) return res.status(400).json({ error: 'Klub jest pełny (' + CLUB_MAX + ' osób).' });
+  if (limited('clj:' + u.id, 10, 3600e3)) return res.status(429).json({ error: 'Za dużo prób, spróbuj później.' });
+  c.members.push(u.id); u.club = c.id; clubCache.delete(c.id); grantAch(u, 'club_join'); store.save('clubs', c); saveU(u); flushAch(u);
+  res.json(clubFull(c, u));
+});
+app.post('/api/clubs/leave', (req, res) => {
+  const u = clubAuth(req, res); if (!u) return;
+  if (!u.club) return res.json({ ok: true });
+  leaveClub(u); res.json({ ok: true });
+});
+app.post('/api/clubs/kick', (req, res) => {
+  const u = clubAuth(req, res); if (!u) return;
+  const c = clubs.get(u.club), t = users.get(String(req.body.userId || ''));
+  if (!c || c.ownerId !== u.id) return res.status(403).json({ error: 'Tylko założyciel może usuwać członków.' });
+  if (!t || t.id === u.id || !c.members.includes(t.id)) return res.status(404).json({ error: 'Nie ma takiego członka.' });
+  leaveClub(t); res.json(clubFull(c, u));
+});
+app.post('/api/clubs/edit', (req, res) => {
+  const u = clubAuth(req, res); if (!u) return;
+  const c = clubs.get(u.club); if (!c || c.ownerId !== u.id) return res.status(403).json({ error: 'Tylko założyciel może edytować klub.' });
+  const desc = cleanTxt(req.body.desc == null ? c.desc : req.body.desc, 100); if (desc && BIO_BAD.test(desc)) return res.status(400).json({ error: 'W opisie nie można wpisywać linków, adresów ani numerów.' });
+  if (req.body.emoji !== undefined) { if (!AVATARS.includes(req.body.emoji)) return res.status(400).json({ error: 'Nieznana ikona.' }); c.emoji = req.body.emoji; }
+  c.desc = desc; clubCache.delete(c.id); store.save('clubs', c); res.json(clubFull(c, u));
+});
+app.post('/api/clubs/disband', (req, res) => {
+  const u = clubAuth(req, res); if (!u) return;
+  const c = clubs.get(u.club); if (!c || c.ownerId !== u.id) return res.status(403).json({ error: 'Tylko założyciel może rozwiązać klub.' });
+  dropClub(c); res.json({ ok: true });
+});
+app.get('/api/admin/clubs', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  res.json([...clubs.values()].sort((a, b) => b.createdAt - a.createdAt).map(c => ({ id: c.id, name: c.name, tag: c.tag, emoji: c.emoji, desc: c.desc, members: c.members.length, owner: (users.get(c.ownerId) || {}).name || '?', createdAt: c.createdAt })));
+});
+app.post('/api/admin/club_delete', (req, res) => {
+  if (!adminAuth(req, res)) return;
+  const c = clubs.get(String((req.body || {}).id || ''));
+  if (!c) return res.status(404).json({ error: 'Nie ma takiego klubu.' });
+  audit(req, 'club_delete', c.name + ' [' + c.tag + ']'); dropClub(c); res.json({ ok: true });
 });
 
 // ---------- profil: statystyki i historia ----------
@@ -1732,6 +1851,8 @@ async function main() {
   const loaded = data.users;
   if (data.meta && data.meta[0]) meta = data.meta[0];
   for (const f of data.feedback || []) feedback.set(f.id, f);
+  for (const c of data.clubs || []) clubs.set(c.id, c);
+  for (const u of users.values()) if (u.club && !clubs.has(u.club)) u.club = null;
   const firstRun = !meta.season;                    // pierwszy start po dodaniu sezonów
   for (const r of data.reports) reports.set(r.id, r);
   for (const b of data.bans) indexBan(b);

@@ -24,7 +24,7 @@ async function load(){
   }
   const w = await api('whoami').catch(() => ({})); role = w.role || 'admin';
   if (window.PANEL === 'owner' && role !== 'owner'){ $('panel').classList.add('hidden'); $('login').classList.remove('hidden'); $('lerr').textContent = 'To nie jest hasło właściciela.'; return false; }
-  $('login').classList.add('hidden'); $('panel').classList.remove('hidden'); render(); if (role === 'owner' && window.PANEL === 'owner') initOwner(); loadStats(); loadFeedback(); return true;
+  $('login').classList.add('hidden'); $('panel').classList.remove('hidden'); render(); if (role === 'owner' && window.PANEL === 'owner') initOwner(); loadStats(); loadFeedback(); loadClubs(); return true;
 }
 function render(){
   $('status').textContent = 'Zgłoszeń do przejrzenia: ' + data.reports.length + ' · blokad: ' + data.bans.length;
@@ -103,6 +103,14 @@ async function loadFeedback(){
     el.querySelector('[data-d]').onclick = async () => { if (!confirm('Usunąć zgłoszenie razem z załącznikiem?')) return; try { await api('feedback/delete', { id: f.id }); loadFeedback(); loadStats(); } catch (e) { alert(e.message); } };
     $('fbList').appendChild(el);
   });
+}
+async function loadClubs(){
+  let list; try { list = await api('clubs'); } catch (e) { $('clubList').textContent = e.message; return; }
+  $('clubList').innerHTML = list.length ? '' : '<div class="card muted">Brak klubów.</div>';
+  list.forEach(c => { const el = document.createElement('div'); el.className = 'card';
+    el.innerHTML = '<b>' + esc(c.emoji) + ' ' + esc(c.name) + '</b> <span class="tag">' + esc(c.tag) + '</span> <span class="muted">· ' + c.members + ' os. · założyciel: ' + esc(c.owner) + ' · ' + fmtT(c.createdAt) + '</span><div style="margin-top:4px">' + (c.desc ? esc(c.desc) : '<span class="muted">brak opisu</span>') + '</div><div class="row"><button class="red" data-d="1">Usuń klub</button></div>';
+    el.querySelector('[data-d]').onclick = async () => { if (!confirm('Usunąć klub „' + c.name + '” (członkowie zostaną wypisani)?')) return; try { await api('club_delete', { id: c.id }); loadClubs(); } catch (e) { alert(e.message); } };
+    $('clubList').appendChild(el); });
 }
 $('fbAll').onclick = () => { fbOnlyOpen = false; loadFeedback(); };
 $('fbOpen').onclick = () => { fbOnlyOpen = true; loadFeedback(); };

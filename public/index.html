@@ -145,6 +145,13 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 .ach b{display:block;font-size:26px;margin-bottom:2px}.ach.lock{opacity:.35;filter:grayscale(1)}.ach.pick{border-color:var(--green)}
 .avs{display:grid;grid-template-columns:repeat(6,1fr);gap:6px;margin-top:8px}.avs button{font-size:22px;padding:6px 0;margin:0;background:var(--panel2)}.avs button.on{background:var(--green)}
 .pl{cursor:pointer;text-decoration:underline dotted}
+.rvwrap{display:flex;gap:8px;margin:10px 0 6px}.rvside{flex:1;min-width:0;text-align:center;font-size:13px}
+.rg{display:grid;grid-template-columns:repeat(9,1fr);aspect-ratio:1/1;border:2px solid var(--b-frame);background:var(--b-frame);margin-top:4px}
+.rg .rc{display:flex;align-items:center;justify-content:center;background:var(--b-cell);color:var(--b-user);font-weight:600;font-size:clamp(9px,2.8vw,14px);border:.5px solid var(--b-thin)}
+.rg .rc.g{color:var(--b-given);font-weight:800}.rg .rc.w{background:var(--b-bad)}.rg .rc.br{border-right:2px solid var(--b-thick)}.rg .rc.bb{border-bottom:2px solid var(--b-thick)}
+.club{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line,#4a474333)}.club:last-child{border:0}
+.club .ce{font-size:28px}.club .cm{flex:1;min-width:0}.club button{margin:0;padding:6px 10px;font-size:13px}
+.tg{color:var(--muted);font-size:12px;font-weight:700}
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:40;padding:16px}
 .modal .card{width:100%;max-width:420px;margin:0}
 .seg.col{flex-direction:column}
@@ -190,6 +197,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
       </div>
       <button class="sec small" id="profBtn">📊 Moje statystyki i historia meczów</button>
       <button class="sec small" id="frBtn">👥 Znajomi</button>
+      <button class="sec small" id="clBtn">🛡 Kluby</button>
     </div>
 
     <!-- logowanie / rejestracja -->
@@ -366,6 +374,21 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <button class="sec" id="rpBack">← Wróć do menu</button>
   </div>
 
+  <div id="clubs" class="hidden">
+    <h1>🛡 Kluby</h1>
+    <p class="sub">Zbierajcie wygrane razem. Ranking klubów liczy wygrane członków z ostatnich 7 dni i średnie Elo pięciu najlepszych.</p>
+    <div class="info" id="clMsg" style="min-height:18px"></div>
+    <div id="clMine"></div>
+    <div class="card hidden" id="clCreate"><b>Załóż klub</b>
+      <input type="text" id="clName" maxlength="20" placeholder="Nazwa klubu (3–20 znaków)" style="margin-top:8px">
+      <input type="text" id="clTag" maxlength="4" placeholder="Skrót (2–4 znaki, np. SUD)">
+      <input type="text" id="clDesc" maxlength="100" placeholder="Krótki opis (opcjonalnie, bez linków)">
+      <div class="info" style="margin-top:8px">Ikona</div><div class="avs" id="clEmoji"></div>
+      <button id="clMake">Załóż klub</button></div>
+    <div class="card"><b>Ranking klubów</b><input type="text" id="clSearch" maxlength="30" placeholder="Szukaj po nazwie lub skrócie…" style="margin-top:8px"><div id="clList"></div></div>
+    <button class="sec" id="clBack">← Wróć do menu</button>
+  </div>
+
   <div id="profile" class="hidden">
     <h1>Statystyki <span id="pName"></span></h1>
     <div class="card" id="pHead"></div>
@@ -417,9 +440,18 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
     <div class="seg" id="hSeg"><button id="hMine" class="on">Twoja plansza</button><button id="hOpp">Plansza rywala</button></div>
     <div id="hGrid"></div>
     <div class="info" id="hInfo"></div>
+    <button class="sec small hidden" id="hReplay">▶ Powtórka meczu</button>
     <button class="sec" id="hClose">Zamknij</button>
   </div>
 </div>
+
+<div id="rvBox" class="modal hidden"><div class="card" style="max-width:520px;max-height:94vh;overflow:auto">
+  <b id="rvTitle">▶ Powtórka meczu</b>
+  <div class="rvwrap"><div class="rvside"><b>Ty</b> <span class="info" id="rvN0"></span><div class="rg" id="rvG0"></div></div><div class="rvside"><b id="rvOpp"></b> <span class="info" id="rvN1"></span><div class="rg" id="rvG1"></div></div></div>
+  <input type="range" id="rvSlider" min="0" max="1000" value="0" style="width:100%">
+  <div class="info" id="rvTime" style="text-align:center"></div>
+  <div class="row" style="justify-content:center"><button id="rvPlay">⏸</button><button class="sec" data-sp="1">1×</button><button class="sec" data-sp="2">2×</button><button class="sec" data-sp="4">4×</button><button class="sec" data-sp="8">8×</button></div>
+  <button class="sec" id="rvClose">Zamknij</button></div></div>
 
 <div id="reportBox" class="modal hidden">
   <div class="card">
@@ -469,7 +501,7 @@ button.offer{background:var(--gold);color:#111;animation:pulse 1.2s infinite}
 
 <script>
 const $ = id => document.getElementById(id);
-const screens = ['menu','mode','searching','game','result','profile','daily','friends','rules','report','changes'];
+const screens = ['menu','mode','searching','game','result','profile','daily','friends','rules','report','changes','clubs'];
 function show(s){ if (s !== 'searching'){ clearTimeout(offerT); $('botOffer').classList.add('hidden'); } screens.forEach(x => $(x).classList.toggle('hidden', x !== s)); $('gear').classList.toggle('hidden', s === 'game' || s === 'searching'); }
 function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function mkStore(area){ return {
@@ -585,6 +617,7 @@ function route(){
   if (p === '/zasady'){ buildRulesDemo(); show('rules'); return; }
   if (p === '/zglos'){ show('report'); return; }
   if (p === '/zmiany'){ loadChanges(); show('changes'); return; }
+  if (p === '/kluby'){ if (me && !me.guest) return openClubs(); history.replaceState(null, '', '/'); }
   if (p === '/znajomi'){ if (me && !me.guest) return openFriends(); history.replaceState(null, '', '/'); }
   else if (m && MODE_BY_SLUG[m[1]]){ gmode = MODE_BY_SLUG[m[1]]; store.set('gmode', gmode); renderMode(); show('mode'); return; }
   else if (p !== '/') history.replaceState(null, '', '/');
@@ -779,7 +812,7 @@ function renderMe(){
     : 'Zalogowany jako ' + me.name + (me.google ? ' (Google)' : '');
   $('accBtn').textContent = guest ? 'Zaloguj / Załóż konto' : 'Wyloguj';
   if (!guest) $('auth').classList.add('hidden');
-  $('profBtn').classList.toggle('hidden', guest);
+  $('profBtn').classList.toggle('hidden', guest); $('clBtn').classList.toggle('hidden', guest);
   updateFrBtn();
   renderMode();
 }
@@ -857,7 +890,7 @@ async function loadLb(){
     const bd = b => b ? b.map((n, k) => n ? '<span class="bdg">' + MEDAL[k] + (n > 1 ? '×' + n : '') + '</span>' : '').join('') : '';
     $('lb').innerHTML = d.length
       ? '<tr><th>#</th><th>Gracz</th><th>Elo</th><th>W/L</th></tr>' + d.map((u,i) =>
-          `<tr><td>${i+1}</td><td>${rankOf(u.elo).icon} ${esc(u.avatar || '')} <span class="pl" data-n="${esc(u.name)}">${esc(u.name)}</span> ${bd(u.badges)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
+          `<tr><td>${i+1}</td><td>${rankOf(u.elo).icon} ${esc(u.avatar || '')} <span class="pl" data-n="${esc(u.name)}">${esc(u.name)}</span>${u.tag ? ' <span class="tg">[' + esc(u.tag) + ']</span>' : ''} ${bd(u.badges)}</td><td>${u.elo}</td><td>${u.wins}/${u.losses}</td></tr>`).join('')
       : '<tr><td class="sub">Nikt jeszcze nie zagrał w tym sezonie rankingowo. Bądź pierwszy!</td></tr>';
     $('lb').querySelectorAll('.pl').forEach(x => x.onclick = () => openPlayer(x.dataset.n));
   } catch {}
@@ -1504,7 +1537,7 @@ function openHistBoard(h){
   hCur = h; hSide = 'mine';
   const res = h.void ? 'unieważniony' : h.won ? 'wygrana' : 'przegrana';
   $('hTitle').textContent = (DIFFS[h.diff] ? DIFFS[h.diff].label : h.diff) + ' · ' + res + ' · vs ' + h.opp;
-  $('hbox').classList.remove('hidden'); drawHistBoard();
+  $('hReplay').classList.toggle('hidden', !h.rp); $('hbox').classList.remove('hidden'); drawHistBoard();
 }
 function drawHistBoard(){
   const h = hCur; if (!h) return;
@@ -1691,7 +1724,7 @@ async function openPlayer(name){
     const sc = (d.showcase || []).map(id => achOf(id)).filter(Boolean).map(a => '<span title="' + esc(a.name) + '" style="font-size:22px;margin-right:4px">' + a.icon + '</span>').join('');
     const tiles = Object.keys(DIFFS).map(k => { const s = d.stats[k], g = s.wins + s.losses; return '<div class="stat"><div class="info">' + DIFFS[k].label + '</div><b>' + rankOf(s.elo).icon + ' ' + s.elo + '</b><div class="info">' + s.wins + 'W / ' + s.losses + 'P' + (g ? '' : ' (brak gier)') + '</div></div>'; }).join('');
     $('plBody').innerHTML = '<div style="display:flex;gap:12px;align-items:center"><div style="font-size:46px">' + esc(d.avatar) + '</div><div><b style="font-size:18px">' + esc(d.name) + '</b> ' + sc
-      + '<div class="info" style="font-size:14px">' + (d.bio ? esc(d.bio) : '') + '</div></div></div>'
+      + '<div class="info" style="font-size:14px">' + (d.bio ? esc(d.bio) : '') + '</div>' + (d.club ? '<div class="info">' + esc(d.club.emoji || '🛡️') + ' ' + esc(d.club.name) + ' <span class="tg">[' + esc(d.club.tag) + ']</span></div>' : '') + '</div></div>'
       + '<div class="info" style="margin-top:8px">🏆 Osiągnięcia: <b>' + d.achCount + '</b> · 🔥 Seria dzienna: <b>' + d.streak + '</b> (rekord ' + d.bestStreak + ')' + (d.medals.some(x => x) ? ' · ' + d.medals.map((n, k) => n ? MEDAL[k] + '×' + n : '').filter(Boolean).join(' ') : '') + '</div>'
       + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0">' + tiles + '</div>'
       + '<div class="info">Na koncie od ' + new Date(d.since).toLocaleDateString('pl-PL') + '</div>';
@@ -1735,6 +1768,103 @@ $('shNative').onclick = async () => {
   try { if (navigator.canShare && navigator.canShare({ files })) await navigator.share({ files, text: txt, url: location.origin }); else await navigator.share({ text: txt, url: location.origin }); } catch {}
 };
 $('shClose').onclick = () => { $('shBox').classList.add('hidden'); URL.revokeObjectURL($('shImg').src); };
+
+// ---------- powtórka meczu ----------
+let rv = null, rvRaf = 0;
+function rvBuild(){
+  for (const k of [0, 1]){ let h = ''; for (let i = 0; i < 81; i++){ const r = (i / 9) | 0, c = i % 9; h += '<div class="rc' + (c === 2 || c === 5 ? ' br' : '') + (r === 2 || r === 5 ? ' bb' : '') + '"></div>'; } $('rvG' + k).innerHTML = h; }
+}
+function rvDraw(){
+  const { h, t } = rv, given = [...h.puz].map(Number), sol = [...h.sol].map(Number);
+  for (const k of [0, 1]){
+    const b = given.slice(), flash = {};
+    for (const [tm, idx, v, w] of h.rp[k]){ if (tm > t) break; if (w){ if (t - tm < 1400) flash[idx] = v; } else b[idx] = v; }
+    const cells = $('rvG' + k).children; let n = 0;
+    for (let i = 0; i < 81; i++){
+      const el = cells[i], f = flash[i] != null, v = f ? flash[i] : b[i];
+      el.textContent = v || ''; const bad = f || (given[i] === 0 && b[i] && b[i] !== sol[i]);
+      el.className = 'rc' + (el.className.includes(' br') ? ' br' : '') + (el.className.includes(' bb') ? ' bb' : '') + (given[i] ? ' g' : '') + (bad ? ' w' : '');
+      if (given[i] === 0 && b[i]) n++;
+    }
+    $('rvN' + k).textContent = '(' + n + '/' + given.filter(x => !x).length + ')';
+  }
+  $('rvTime').textContent = fmt(Math.round(rv.t)) + ' / ' + fmt(rv.dur); $('rvSlider').value = Math.round(1000 * rv.t / rv.dur);
+}
+function rvLoop(ts){
+  if (!rv) return;
+  const dt = rv.last ? ts - rv.last : 0; rv.last = ts;
+  if (rv.play){ rv.t = Math.min(rv.dur, rv.t + dt * rv.speed); if (rv.t >= rv.dur){ rv.play = false; $('rvPlay').textContent = '↺'; } }
+  rvDraw(); rvRaf = requestAnimationFrame(rvLoop);
+}
+function openReplay(h){
+  if (!h.rp) return;
+  const dur = Math.max(h.ms || 0, ...h.rp.map(a => a.length ? a[a.length - 1][0] : 0)) + 800;
+  rv = { h, t: 0, play: true, speed: 1, dur, last: 0 }; rvBuild();
+  $('rvOpp').textContent = h.opp; $('rvTitle').textContent = '▶ Powtórka · ' + (DIFFS[h.diff] ? DIFFS[h.diff].label : h.diff) + ' · ' + (h.won ? 'wygrana' : 'przegrana');
+  $('rvPlay').textContent = '⏸'; document.querySelectorAll('#rvBox [data-sp]').forEach(b => b.classList.toggle('on', b.dataset.sp === '1'));
+  $('hbox').classList.add('hidden'); $('rvBox').classList.remove('hidden'); cancelAnimationFrame(rvRaf); rvRaf = requestAnimationFrame(rvLoop);
+}
+$('rvPlay').onclick = () => { if (!rv) return; if (rv.t >= rv.dur){ rv.t = 0; rv.play = true; } else rv.play = !rv.play; $('rvPlay').textContent = rv.play ? '⏸' : '▶'; };
+$('rvSlider').oninput = () => { if (!rv) return; rv.t = rv.dur * $('rvSlider').value / 1000; rv.play = false; $('rvPlay').textContent = '▶'; rvDraw(); };
+document.querySelectorAll('#rvBox [data-sp]').forEach(b => b.onclick = () => { if (!rv) return; rv.speed = +b.dataset.sp; document.querySelectorAll('#rvBox [data-sp]').forEach(x => x.classList.toggle('on', x === b)); });
+$('rvClose').onclick = () => { rv = null; cancelAnimationFrame(rvRaf); $('rvBox').classList.add('hidden'); };
+$('hReplay').onclick = () => hCur && openReplay(hCur);
+
+// ---------- kluby ----------
+async function capi(path, body){
+  const r = await fetch('/api/clubs/' + path, { method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify(Object.assign({ token: store.get('token') }, body || {})) });
+  const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || 'Błąd'); return d;
+}
+let clEmoji = '🛡️', clMineData = null;
+function clubBody(c, manage){
+  const rows = c.rows.map(m => '<tr><td>' + esc(m.avatar) + ' ' + (m.owner ? '👑 ' : '') + '<span class="pl" data-n="' + esc(m.name) + '">' + esc(m.name) + '</span>' + (m.online ? ' <span style="color:var(--green)">●</span>' : '') + '</td><td>' + rankOf(m.elo).icon + ' ' + m.elo + '</td><td>' + m.weekly + '</td>'
+    + (manage && !m.owner ? '<td><button class="sec small" data-kick="' + m.id + '" style="margin:0;padding:4px 8px">Wyrzuć</button></td>' : '') + '</tr>').join('');
+  return '<div style="display:flex;gap:10px;align-items:center"><div style="font-size:40px">' + esc(c.emoji) + '</div><div style="flex:1;min-width:0"><b style="font-size:18px">' + esc(c.name) + '</b> <span class="tg">[' + esc(c.tag) + ']</span>'
+    + '<div class="info">' + (c.desc ? esc(c.desc) : 'Brak opisu') + '</div></div></div>'
+    + '<div class="info" style="margin:8px 0">👥 ' + c.members + ' / ' + c.max + ' · 🏆 wygrane (7 dni): <b>' + c.weekly + '</b> · średnie Elo TOP 5: <b>' + c.avgElo + '</b></div>'
+    + '<div style="overflow-x:auto"><table><tr><th>Członek</th><th>Elo</th><th>Wygr. 7 dni</th>' + (manage ? '<th></th>' : '') + '</tr>' + rows + '</table></div>';
+}
+function bindPl(el){ el.querySelectorAll('.pl').forEach(x => x.onclick = () => openPlayer(x.dataset.n)); }
+function renderClubs(d){
+  $('clMsg').textContent = d.guest ? 'Kluby są dla graczy z kontem – załóż konto, aby dołączyć.' : '';
+  const mine = d.mine; clMineData = mine;
+  $('clCreate').classList.toggle('hidden', !!mine || d.guest);
+  const box = $('clMine'); box.innerHTML = '';
+  if (mine){
+    const card = document.createElement('div'); card.className = 'card';
+    card.innerHTML = '<div class="info" style="margin-bottom:6px">Twój klub</div>' + clubBody(mine, mine.owner)
+      + '<div class="row">' + (mine.owner ? '<button class="sec" id="clEdit">✏️ Edytuj</button><button class="red" id="clDisband">Rozwiąż klub</button>' : '') + '<button class="sec" id="clLeave">Opuść klub</button></div>';
+    box.appendChild(card); bindPl(card);
+    card.querySelectorAll('[data-kick]').forEach(b => b.onclick = async () => { if (!confirm('Wyrzucić tego gracza z klubu?')) return; try { renderClubs(Object.assign({}, d, { mine: await capi('kick', { userId: b.dataset.kick }) })); } catch (e) { $('clMsg').textContent = e.message; } });
+    $('clLeave').onclick = async () => { if (!confirm('Opuścić klub?' + (mine.owner ? ' Przywództwo przejmie inny członek.' : ''))) return; try { await capi('leave'); loadClubs(); } catch (e) { $('clMsg').textContent = e.message; } };
+    if (mine.owner){
+      $('clDisband').onclick = async () => { if (!confirm('Rozwiązać klub? Wszyscy członkowie zostaną z niego usunięci.')) return; try { await capi('disband'); loadClubs(); } catch (e) { $('clMsg').textContent = e.message; } };
+      $('clEdit').onclick = async () => { const t = prompt('Nowy opis klubu (do 100 znaków, bez linków):', mine.desc || ''); if (t === null) return; try { await capi('edit', { desc: t }); loadClubs(); } catch (e) { $('clMsg').textContent = e.message; } };
+    }
+  }
+  const list = $('clList'); list.innerHTML = d.top.length ? '' : '<div class="info" style="margin-top:8px">Brak klubów. Załóż pierwszy!</div>';
+  d.top.forEach((c, i) => {
+    const row = document.createElement('div'); row.className = 'club';
+    row.innerHTML = '<div class="ce">' + esc(c.emoji) + '</div><div class="cm"><b>' + (i + 1) + '. ' + esc(c.name) + '</b> <span class="tg">[' + esc(c.tag) + ']</span><div class="info">👥 ' + c.members + '/' + c.max + ' · 🏆 ' + c.weekly + ' · Elo ' + c.avgElo + '</div></div>'
+      + '<button class="sec" data-v="1">Zobacz</button>' + (!mine && !d.guest ? '<button data-j="1">Dołącz</button>' : '');
+    row.querySelector('[data-v]').onclick = async () => { try { const full = await capi('get', { id: c.id }); $('plBody').innerHTML = clubBody(full, false); bindPl($('plBody')); $('plBox').classList.remove('hidden'); } catch (e) { $('clMsg').textContent = e.message; } };
+    const j = row.querySelector('[data-j]'); if (j) j.onclick = async () => { try { await capi('join', { id: c.id }); toast('Dołączyłeś do klubu ' + c.name + ' 🛡'); loadClubs(); } catch (e) { $('clMsg').textContent = e.message; } };
+    list.appendChild(row);
+  });
+}
+async function loadClubs(){ try { renderClubs(await capi('list', { q: $('clSearch').value.trim() })); } catch (e) { $('clMsg').textContent = e.message; } }
+function openClubs(){
+  show('clubs'); $('clMsg').textContent = '';
+  const box = $('clEmoji'); box.innerHTML = ''; AVATARS.forEach(a => { const b = document.createElement('button'); b.textContent = a; b.className = a === clEmoji ? 'on' : ''; b.onclick = () => { clEmoji = a; [...box.children].forEach(x => x.classList.toggle('on', x === b)); }; box.appendChild(b); });
+  loadClubs();
+}
+let clST = 0; $('clSearch').oninput = () => { clearTimeout(clST); clST = setTimeout(loadClubs, 300); };
+$('clMake').onclick = async () => {
+  try { await capi('create', { name: $('clName').value, tag: $('clTag').value, desc: $('clDesc').value, emoji: clEmoji }); $('clName').value = $('clTag').value = $('clDesc').value = ''; toast('Klub założony 🛡'); loadClubs(); }
+  catch (e) { $('clMsg').textContent = e.message; }
+};
+$('clBack').onclick = () => nav('/');
+$('clBtn').onclick = () => nav('/kluby');
 
 // ---------- start ----------
 renderTiles(); renderMode(); renderLbSeg();
